@@ -1,0 +1,20 @@
+kind: pipeline
+type: docker
+name: test
+
+steps:
+  - name: Test Go
+    image: golang:1.23
+    commands:
+      - make test
+      - make race
+      - exitcode="$?"
+      - make cover
+      - make benchmark
+      - make cpuprof
+      - make memprof
+
+  - name: Test Makefile
+    image: cytopia/checkmake:latest
+    commands:
+      - checkmake Makefile
