@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"time"
 )
 
 /* ---------------------------------------------------------------
@@ -346,18 +345,19 @@ func generateARIMA11(seriesLen int, seed int64) []float64 {
 	// The underlying process is an ARMA(1,1) of length seriesLen+1.
 	// We then difference it once to obtain an ARIMA(1,1,1) series
 	// of length seriesLen.
-	rand.Seed(seed)
+	randGen := rand.New(rand.NewSource(seed))
+
 	total := seriesLen + 1 // +1 for the extra point needed for differencing
 
 	y := make([]float64, total)
 	e := make([]float64, total)
 
 	// initialise
-	y[0] = rand.NormFloat64()
-	e[0] = rand.NormFloat64()
+	y[0] = randGen.NormFloat64()
+	e[0] = randGen.NormFloat64()
 
 	for t := 1; t < total; t++ {
-		et := rand.NormFloat64()
+		et := randGen.NormFloat64()
 		e[t] = et
 		y[t] = 0.5*y[t-1] + et + 0.4*e[t-1]
 	}
@@ -372,8 +372,6 @@ func generateARIMA11(seriesLen int, seed int64) []float64 {
    --------------------------------------------------------------- */
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
-
 	// --- 1. Create synthetic data --------------------------------
 	totalSeries := 210   // 200 for training + 10 for true future values
 	seed := int64(12345) // fixed seed – data are reproducible
