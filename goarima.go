@@ -1,10 +1,9 @@
-package main
+package goarima
 
 import (
 	"errors"
 	"fmt"
 	"math"
-	"math/rand"
 )
 
 /* ---------------------------------------------------------------
@@ -17,6 +16,62 @@ type ARIMA struct {
 	lastY, lastE []float64 // last p differenced observations & last q residuals
 	lastOrig     float64   // last original value (for undifferencing)
 	sigma2       float64   // variance of the residuals (not used in forecasting)
+}
+
+func NewARIMA(p, d, q int) (*ARIMA, error) {
+	if p < 0 || d < 0 || q < 0 {
+		return nil, errors.New("ARIMA orders must be non-negative")
+	}
+	if p == 0 && d == 0 && q == 0 {
+		return nil, errors.New("at least one of AR, differencing or MA order must be positive")
+	}
+	return &ARIMA{
+		p:        p,
+		d:        d,
+		q:        q,
+		phi:      make([]float64, p),
+		theta:    make([]float64, q),
+		lastY:    make([]float64, p),
+		lastE:    make([]float64, q),
+		lastOrig: 0.0,
+		sigma2:   0.0,
+	}, nil
+}
+
+// Orders returns the ARIMA orders (p, d, q).
+func (m *ARIMA) Orders() (int, int, int) {
+	return m.p, m.d, m.q
+}
+
+// Phi returns the AR coefficients of the model.
+func (m *ARIMA) Phi() []float64 {
+	return m.phi
+}
+
+// Theta returns the MA coefficients of the model.
+func (m *ARIMA) Theta() []float64 {
+	return m.theta
+}
+
+// LastY returns the last p differenced observations.
+func (m *ARIMA) LastY() []float64 {
+	return m.lastY
+}
+
+// LastE returns the last q residuals.
+func (m *ARIMA) LastE() []float64 {
+	return m.lastE
+}
+
+// LastOrig returns the last original value (for undifferencing).
+func (m *ARIMA) LastOrig() float64 {
+	return m.lastOrig
+}
+
+// Sigma2 returns the variance of the residuals.
+// This is not used in forecasting but can be useful for diagnostics.
+func (m *ARIMA) Sigma2() float64 {
+	return m.sigma2
 }
 
 /* ---------------------------------------------------------------
@@ -32,7 +87,7 @@ func (m *ARIMA) Fit(series []float64) error {
 	m.lastOrig = series[len(series)-1]
 
 	// 1. difference the series d times
-	y := difference(series, m.d)
+	y := Difference(series, m.d)
 
 	// 2. estimate AR part
 	if m.p > 0 {
@@ -105,7 +160,7 @@ func (m *ARIMA) Forecast(h int) ([]float64, error) {
 		return nil, err
 	}
 	// 2. undifference to obtain forecast on the original scale
-	origPred := undifference(diffPred, m.lastOrig)
+	origPred := Undifference(diffPred, m.lastOrig)
 	return origPred, nil
 }
 
@@ -171,7 +226,7 @@ func absInt(x int) int {
 }
 
 // Difference the series d times
-func difference(y []float64, d int) []float64 {
+func Difference(y []float64, d int) []float64 {
 	res := make([]float64, len(y))
 	copy(res, y)
 	for k := 0; k < d; k++ {
@@ -188,7 +243,7 @@ func difference(y []float64, d int) []float64 {
 }
 
 // Undo the differencing – recover the original scale
-func undifference(diffPred []float64, lastOrig float64) []float64 {
+func Undifference(diffPred []float64, lastOrig float64) []float64 {
 	res := make([]float64, len(diffPred))
 	cum := lastOrig
 	for i, d := range diffPred {
@@ -335,84 +390,4 @@ func gaussSolve(A [][]float64, b []float64) ([]float64, error) {
 		}
 	}
 	return x, nil
-}
-
-/* ---------------------------------------------------------------
-   Example – synthetic ARIMA(1,1,1) data
-   --------------------------------------------------------------- */
-
-func generateARIMA11(seriesLen int, seed int64) []float64 {
-	// The underlying process is an ARMA(1,1) of length seriesLen+1.
-	// We then difference it once to obtain an ARIMA(1,1,1) series
-	// of length seriesLen.
-	randGen := rand.New(rand.NewSource(seed))
-
-	total := seriesLen + 1 // +1 for the extra point needed for differencing
-
-	y := make([]float64, total)
-	e := make([]float64, total)
-
-	// initialise
-	y[0] = randGen.NormFloat64()
-	e[0] = randGen.NormFloat64()
-
-	for t := 1; t < total; t++ {
-		et := randGen.NormFloat64()
-		e[t] = et
-		y[t] = 0.5*y[t-1] + et + 0.4*e[t-1]
-	}
-
-	// difference once
-	x := difference(y, 1) // length = seriesLen
-	return x
-}
-
-/* ---------------------------------------------------------------
-   Main – fit the model and compare forecast with true values
-   --------------------------------------------------------------- */
-
-func main() {
-	// --- 1. Create synthetic data --------------------------------
-	totalSeries := 210   // 200 for training + 10 for true future values
-	seed := int64(12345) // fixed seed – data are reproducible
-	series := generateARIMA11(totalSeries, seed)
-
-	// --- 2. Fit ARIMA(1,1,1) to the first 200 observations -------
-	train := series[:200]
-	model := ARIMA{p: 1, d: 1, q: 1}
-	if err := model.Fit(train); err != nil {
-		fmt.Printf("Fitting error: %v\n", err)
-		return
-	}
-
-	// --- 3. Forecast the next 10 points --------------------------
-	forecast, err := model.Forecast(10)
-	if err != nil {
-		fmt.Printf("Forecast error: %v\n", err)
-		return
-	}
-
-	// --- 4. True values (we know them because the data were generated)
-	trueFuture := series[200:210]
-
-	// --- 5. Print results ---------------------------------------
-	fmt.Println("ARIMA(1,1,1) Fit & Forecast Example")
-	fmt.Println("===================================")
-	fmt.Printf("AR coefficient  (φ1): %.4f\n", model.phi[0])
-	if model.q > 0 {
-		fmt.Printf("MA coefficient (θ1): %.4f\n", model.theta[0])
-	}
-	fmt.Println()
-	fmt.Println("True future values   :", trueFuture)
-	fmt.Println("Forecasted values    :", forecast)
-
-	// --- 6. Compute mean absolute percentage error (MAPE) -------
-	var mape float64
-	for i := 0; i < 10; i++ {
-		if trueFuture[i] != 0 {
-			mape += math.Abs((trueFuture[i] - forecast[i]) / trueFuture[i])
-		}
-	}
-	mape = 100 * mape / 10
-	fmt.Printf("\nMean Absolute Percentage Error (MAPE): %.2f%%\n", mape)
 }
