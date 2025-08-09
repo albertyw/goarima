@@ -1,8 +1,10 @@
 package goarima
 
 import (
-	"fmt"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestARIMA(t *testing.T) {
@@ -10,25 +12,13 @@ func TestARIMA(t *testing.T) {
 	p, d, q := 1, 1, 1
 
 	model, err := NewARIMA(p, d, q)
-	if err != nil {
-		t.Fatalf("Failed to create ARIMA model: %v", err)
-	}
-	if model == nil {
-		t.Fatal("Failed to create ARIMA model")
-	}
+	require.NoError(t, err)
+	require.NotNil(t, model)
 
 	err = model.Fit(data)
-	if err != nil {
-		t.Fatalf("Failed to fit ARIMA model: %v", err)
-	}
+	require.NoError(t, err)
 
 	forecast, err := model.Forecast(5)
-	if err != nil {
-		t.Fatalf("Failed to forecast: %v", err)
-	}
-	if len(forecast) != 5 {
-		t.Fatalf("Expected 5 forecast, got %d", len(forecast))
-	}
-
-	fmt.Println("Forecast:", forecast)
+	require.NoError(t, err)
+	assert.Equal(t, len(forecast), 5, "Expected 5 forecast values")
 }
