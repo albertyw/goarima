@@ -20,5 +20,10 @@ func TestARIMA(t *testing.T) {
 
 	forecast, err := model.Forecast(5)
 	require.NoError(t, err)
-	assert.Equal(t, len(forecast), 5, "Expected 5 forecast values")
+	assert.Equal(t, len(forecast), 5)
+	assert.Equal(t, forecast[0], 11.0)
+	assert.Equal(t, forecast[1], 12.0)
+	assert.Equal(t, forecast[2], 13.0)
+	assert.Equal(t, forecast[3], 14.0)
+	assert.Equal(t, forecast[4], 15.0)
 }
