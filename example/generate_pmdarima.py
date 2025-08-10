@@ -44,6 +44,10 @@ def predict_arima(data: list[float], periods: int = 12) -> list[float]:
 
 
 def main() -> None:
+    data = [1.0, 2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
+    predict_arima(data)
+    return
+
     # Get all CSV files in the data directory
     files = glob.glob(DATA_DIRECTORY)
 

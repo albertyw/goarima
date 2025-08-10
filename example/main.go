@@ -15,6 +15,7 @@ import (
 var airPassengersCSV string
 
 // readAirPassengersData reads the embedded CSV data for the AirPassengers dataset
+// nolint: unused
 func readAirPassengersData() ([]float64, error) {
 	var series []float64
 	// Read file and parse CSV data
@@ -114,6 +115,7 @@ func predictRandomData() {
 }
 
 // predictAirPassengers fits an ARIMA model to the AirPassengers dataset and forecasts the next 12 months
+// nolint: unused
 func predictAirPassengers() {
 	// --- 1. Read the AirPassengers dataset ----------------------
 	series, err := readAirPassengersData()
@@ -160,8 +162,50 @@ func predictAirPassengers() {
 	}
 }
 
+func predictOscillatingData() {
+	series := []float64{1.0, 2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0}
+
+	// --- 2. Fit ARIMA to the entire dataset --------------
+	model, err := goarima.NewARIMA(1, 0, 0)
+	if err != nil {
+		fmt.Printf("Model creation error: %v\n", err)
+		return
+	}
+	if err = model.Fit(series); err != nil {
+		fmt.Printf("Fitting error: %v\n", err)
+		return
+	}
+
+	// --- 3. Forecast the next 12 months --------------------------
+	forecast, err := model.Forecast(12)
+	if err != nil {
+		fmt.Printf("Forecast error: %v\n", err)
+		return
+	}
+
+	// --- 4. Print results ---------------------------------------
+	fmt.Println("ARIMA Fit & Forecast for Oscillating Data")
+	fmt.Println("===============================================")
+	p, d, q := model.Orders()
+	fmt.Printf("ARIMA(%d,%d,%d) model fitted\n", p, d, q)
+	fmt.Printf("AR coefficient (Phi): %.4f\n", model.Phi()[0])
+	if q > 0 {
+		// Only print MA coefficient if q > 0
+		// This is a check to ensure we don't access an empty slice
+		fmt.Printf("MA coefficient (Theta): %.4f\n", model.Theta()[0])
+	}
+	fmt.Printf("LastY: %.4f\n", series[len(series)-1])
+	fmt.Printf("LastE: %.4f\n", model.LastE())
+	fmt.Printf("Sigma2: %.4f\n", model.Sigma2())
+	fmt.Println("Forecasted values for next 12 months:")
+	for _, f := range forecast {
+		fmt.Println(f)
+	}
+}
+
 // main function to run the example
 func main() {
 	// predictRandomData()
-	predictAirPassengers()
+	// predictAirPassengers()
+	predictOscillatingData()
 }
