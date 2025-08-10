@@ -29,7 +29,7 @@ def main() -> None:
             data = handle.readlines()
 
         # Fit an ARIMA model to the data
-        model = ARIMA(order=(1, 1, 1))
+        model = ARIMA(order=(1, 0, 0), seasonal_order=(0, 0, 0, 0))
         model.fit(data)
 
         # Output model data and predictions
@@ -39,8 +39,8 @@ def main() -> None:
         print("\033[95mModel Summary\033[0m")
         print(model.summary())
 
-        print("\033[95mModel Dict\033[0m")
-        print(model.to_dict())
+        # print("\033[95mModel Dict\033[0m")
+        # print(model.to_dict())
 
         print("\033[95mAR Coefficients (Phi)\033[0m")
         print(model.arparams())
