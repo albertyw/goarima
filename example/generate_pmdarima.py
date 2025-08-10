@@ -49,7 +49,7 @@ def main() -> None:
         print(model.maparams())
 
         print("\033[95mPredictions\033[0m")
-        print(model.predict(n_periods=10))
+        print(model.predict(n_periods=12))
 
 
 if __name__ == "__main__":
