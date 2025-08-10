@@ -33,6 +33,7 @@ func readAirPassengersData() ([]float64, error) {
 }
 
 // generateARIMA11 generates synthetic ARIMA(1,1,1) data
+// nolint: unused
 func generateARIMA11(seriesLen int, seed int64) []float64 {
 	// The underlying process is an ARMA(1,1) of length seriesLen+1.
 	// We then difference it once to obtain an ARIMA(1,1,1) series
@@ -60,6 +61,7 @@ func generateARIMA11(seriesLen int, seed int64) []float64 {
 }
 
 // predictRandomData will fit the model and compare forecast with true values
+// nolint: unused
 func predictRandomData() {
 	// --- 1. Create synthetic data --------------------------------
 	totalSeries := 210   // 200 for training + 10 for true future values
