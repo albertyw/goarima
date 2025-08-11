@@ -91,11 +91,12 @@ func (m *ARIMA) Fit(series []float64) error {
 
 	// 2. estimate AR part
 	if m.p > 0 {
-		phi, err := solveYuleWalker(y, m.p)
+		phi, sigma2, err := solveYuleWalker(y, m.p)
 		if err != nil {
 			return fmt.Errorf("Yule‑Walker estimation failed: %w", err)
 		}
 		m.phi = phi
+		m.sigma2 = sigma2
 	} else {
 		m.phi = []float64{}
 	}
@@ -135,13 +136,6 @@ func (m *ARIMA) Fit(series []float64) error {
 	} else {
 		m.lastE = []float64{}
 	}
-
-	// 6. (optional) variance of residuals
-	var ss float64
-	for _, r := range residuals {
-		ss += r * r
-	}
-	m.sigma2 = ss / float64(len(residuals))
 
 	return nil
 }
@@ -257,7 +251,7 @@ func Undifference(diffPred []float64, lastOrig float64) []float64 {
    Yule‑Walker estimation of the AR part
    --------------------------------------------------------------- */
 
-func solveYuleWalker(series []float64, p int) ([]float64, error) {
+func solveYuleWalkerOld(series []float64, p int) ([]float64, error) {
 	if p <= 0 || len(series) <= p {
 		return nil, errors.New("invalid AR order or too few observations")
 	}
