@@ -15,12 +15,12 @@ func TestSimpleARIMA(t *testing.T) {
 		expected []float64
 	}{
 		{
-			name:     "ARIMA(1,0,0) with simple data",
-			data:     []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+			name:     "ARIMA(1,0,0) with oscillating data",
+			data:     []float64{1, 2, 1, 2, 1, 2, 1, 2, 1, 2},
 			p:        1,
 			d:        0,
 			q:        0,
-			expected: []float64{11, 12, 13, 14, 15},
+			expected: []float64{1, 2, 1, 2, 1},
 		},
 		{
 			name:     "ARIMA(1,1,1) with simple data",
