@@ -2,6 +2,7 @@ package goarima
 
 import (
 	"errors"
+	"fmt"
 )
 
 // solveYuleWalker applies the Yule‑Walker equations to the input series `y`
@@ -48,6 +49,8 @@ func solveYuleWalker(y []float64, p int) ([]float64, float64, error) {
 		sigma2 *= 1 - kappa*kappa
 	}
 
+	fmt.Println("Yule-Walker coefficients:", phi)
+	fmt.Println("White noise variance:", sigma2)
 	return phi, sigma2, nil
 }
 
