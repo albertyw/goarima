@@ -286,9 +286,9 @@ func solveYuleWalkerOld(series []float64, p int) ([]float64, error) {
 	return phi, nil
 }
 
-/* ---------------------------------------------------------------
-   OLS regression – used for the approximate MA estimation
-   --------------------------------------------------------------- */
+/* --------------------------------------------------------------------------------
+   Ordinary Least Squares (OLS) regression – used for the approximate MA estimation
+   -------------------------------------------------------------------------------- */
 
 func estimateMA(residuals []float64, q int) ([]float64, error) {
 	if q <= 0 || len(residuals) <= q {
