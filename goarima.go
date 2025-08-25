@@ -12,7 +12,7 @@ import (
    --------------------------------------------------------------- */
 
 type ARIMA struct {
-	p, d, q      int       // AR, differencing, MA orders
+	p, d, q      int       // AR, differencing, MA non-seasonal orders
 	phi, theta   []float64 // AR & MA coefficients
 	lastY, lastE []float64 // last p differenced observations & last q residuals
 	lastOrig     float64   // last original value (for undifferencing)
