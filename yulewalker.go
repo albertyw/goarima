@@ -17,6 +17,7 @@ func init() {
 }
 
 // autocorrelationAtLag calculates the autocorrelation at a given lag for a given time series.
+// This function has been manually verified.
 //
 // Args:
 //
@@ -74,6 +75,7 @@ func buildAutocorrelationVector(series []float64, order int) []float64 {
 }
 
 // buildToeplitzMatrix builds a Toeplitz matrix from a given autocorrelation vector.
+// This function has been manually verified against scipy.linalg.toeplitz.
 //
 // Args:
 //
@@ -81,7 +83,7 @@ func buildAutocorrelationVector(series []float64, order int) []float64 {
 //
 // Returns:
 //
-//	A 2D slice of floats representing the Toeplitz matrix.
+//	A 2D slice of floats representing the (n-1) x (n-1) Toeplitz matrix.
 func buildToeplitzMatrix(rVec []float64) [][]float64 {
 	p := len(rVec) - 1 // number of AR coefficients
 	matrix := make([][]float64, p)

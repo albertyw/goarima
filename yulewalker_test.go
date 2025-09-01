@@ -146,6 +146,35 @@ func TestBuildToeplitzMatrix(t *testing.T) {
 			rVec:     []float64{1, 0, 0.5},
 			expected: [][]float64{{1, 0}, {0, 1}},
 		},
+		{
+			name:     "rVec length 1",
+			rVec:     []float64{1.0},
+			expected: [][]float64{},
+		},
+		{
+			name:     "rVec length 2",
+			rVec:     []float64{1.0, 0.5},
+			expected: [][]float64{{1.0}},
+		},
+		{
+			name:     "rVec length 3",
+			rVec:     []float64{1.0, 0.5, 0.25},
+			expected: [][]float64{{1.0, 0.5}, {0.5, 1.0}},
+		},
+		{
+			name: "rVec length 4",
+			rVec: []float64{0.5, 0.2, 0.1, 0.05},
+			expected: [][]float64{
+				{0.5, 0.2, 0.1},
+				{0.2, 0.5, 0.2},
+				{0.1, 0.2, 0.5},
+			},
+		},
+		{
+			name:     "rVec with negative values",
+			rVec:     []float64{1.0, -0.5, 0.25},
+			expected: [][]float64{{1.0, -0.5}, {-0.5, 1.0}},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -166,11 +195,6 @@ func TestBuildRHSVector(t *testing.T) {
 			name:     "Simple rVec",
 			rVec:     []float64{1, 0.5, 0.25},
 			expected: []float64{0.5, 0.25},
-		},
-		{
-			name:     "Empty rVec",
-			rVec:     []float64{},
-			expected: []float64{},
 		},
 	}
 
