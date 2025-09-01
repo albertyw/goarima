@@ -125,7 +125,7 @@ func TestBuildAutocorrelationVector(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			actual := buildAutocorrelationVector(tc.series, tc.order)
-			assert.Equal(t, actual, tc.expected)
+			assert.Equal(t, tc.expected, actual)
 		})
 	}
 }
@@ -151,7 +151,7 @@ func TestBuildToeplitzMatrix(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			actual := buildToeplitzMatrix(tc.rVec)
-			assert.Equal(t, actual, tc.expected)
+			assert.Equal(t, tc.expected, actual)
 		})
 	}
 }
@@ -177,7 +177,7 @@ func TestBuildRHSVector(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			actual := buildRHSVector(tc.rVec)
-			assert.Equal(t, actual, tc.expected)
+			assert.Equal(t, tc.expected, actual)
 		})
 	}
 }
