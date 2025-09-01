@@ -31,11 +31,28 @@ func autocorrelationAtLag(series []float64, lag int) float64 {
 	if lag >= n {
 		return 0
 	}
+
+	// Calculate mean
 	var sum float64
-	for i := 0; i < n-lag; i++ {
-		sum += series[i] * series[i+lag]
+	for _, v := range series {
+		sum += v
 	}
-	return sum / float64(n)
+	mean := sum / float64(n)
+
+	// Calculate numerator (covariance)
+	var numerator float64
+	for i := 0; i < n-lag; i++ {
+		numerator += (series[i] - mean) * (series[i+lag] - mean)
+	}
+
+	// Calculate denominator (variance)
+	var denominator float64
+	for _, x := range series {
+		denominator += (x - mean) * (x - mean)
+	}
+
+	// Calculate autocorrelation
+	return numerator / float64(n)
 }
 
 // buildAutocorrelationVector builds a vector of autocorrelations for a given time series up to a specified order.

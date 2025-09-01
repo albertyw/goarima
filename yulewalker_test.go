@@ -17,25 +17,79 @@ func TestAutocorrelationAtLag(t *testing.T) {
 			name:     "Simple series, lag 0",
 			series:   []float64{1, 2, 3, 4, 5},
 			lag:      0,
-			expected: 2.0, // (1*1 + 2*2 + 3*3 + 4*4 + 5*5) / 5 = 55 / 5 = 11
+			expected: 2,
 		},
 		{
 			name:     "Simple series, lag 1",
 			series:   []float64{1, 2, 3, 4, 5},
 			lag:      1,
-			expected: 2.0,
+			expected: 0.8,
 		},
 		{
 			name:     "Simple series, lag 2",
 			series:   []float64{1, 2, 3, 4, 5},
 			lag:      2,
-			expected: 2.0,
+			expected: -0.2,
 		},
 		{
 			name:     "Lag exceeds series length",
 			series:   []float64{1, 2, 3},
 			lag:      3,
 			expected: 0.0,
+		},
+		{
+			name:     "Constant series",
+			series:   []float64{1, 1, 1, 1, 1},
+			lag:      1,
+			expected: 0,
+		},
+		{
+			name:     "Simple linear series",
+			series:   []float64{1, 2, 3, 4, 5},
+			lag:      1,
+			expected: 0.8,
+		},
+		{
+			name:     "Series with negative values",
+			series:   []float64{-1, 0, 1, 2, 3},
+			lag:      1,
+			expected: 0.8,
+		},
+		{
+			name:     "Series with zero values",
+			series:   []float64{0, 1, 0, 1, 0},
+			lag:      1,
+			expected: -0.192,
+		},
+		{
+			name:     "Lag equals series length",
+			series:   []float64{1, 2, 3},
+			lag:      3,
+			expected: 0.0,
+		},
+		{
+			name:     "Lag greater than series length",
+			series:   []float64{1, 2, 3},
+			lag:      4,
+			expected: 0.0,
+		},
+		{
+			name:     "Short series",
+			series:   []float64{1, 2},
+			lag:      1,
+			expected: -1.125,
+		},
+		{
+			name:     "More complex series",
+			series:   []float64{1, 3, 2, 5, 4, 6},
+			lag:      2,
+			expected: 1,
+		},
+		{
+			name:     "Series with repeating pattern",
+			series:   []float64{1, 2, 1, 2, 1, 2},
+			lag:      2,
+			expected: 0.166666666666667,
 		},
 	}
 
