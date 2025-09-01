@@ -44,7 +44,7 @@ def predict_arima(data: list[float], periods: int = 12) -> list[float]:
 
 
 def main() -> None:
-    data = [1.0, 2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
+    data = [1.0, 2.0] * 500
     predict_arima(data)
     return
 

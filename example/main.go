@@ -163,7 +163,11 @@ func predictAirPassengers() {
 }
 
 func predictOscillatingData() {
-	series := []float64{1.0, 2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0}
+	series := []float64{}
+	for range 50 {
+		series = append(series, 1.0, 2.0)
+		// series = append(series, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 5.0, 4.0, 3.0, 2.0)
+	}
 
 	// --- 2. Fit ARIMA to the entire dataset --------------
 	model, err := goarima.NewARIMA(1, 0, 0)
@@ -176,7 +180,7 @@ func predictOscillatingData() {
 		return
 	}
 
-	// --- 3. Forecast the next 12 months --------------------------
+	// --- 3. Forecast the next 12 periods --------------------------
 	forecast, err := model.Forecast(12)
 	if err != nil {
 		fmt.Printf("Forecast error: %v\n", err)
