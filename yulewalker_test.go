@@ -96,7 +96,7 @@ func TestAutocorrelationAtLag(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			actual := autocorrelationAtLag(tc.series, tc.lag)
-			assert.InDelta(t, actual, tc.expected, 1e-6)
+			assert.InDelta(t, tc.expected, actual, 1e-6)
 		})
 	}
 }
@@ -235,8 +235,8 @@ func TestSolveFromAutocov(t *testing.T) {
 			phi, sigma2, err := solveYuleWalker(tc.rVec, tc.p)
 			assert.NoError(t, err)
 
-			assert.InDeltaSlice(t, phi, tc.expected, 1e-6)
-			assert.InDelta(t, sigma2, tc.sigma2, 1e-6)
+			assert.InDeltaSlice(t, tc.expected, phi, 1e-6)
+			assert.InDelta(t, tc.sigma2, sigma2, 1e-6)
 		})
 	}
 }

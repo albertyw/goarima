@@ -49,9 +49,9 @@ func TestSimpleARIMA(t *testing.T) {
 			require.NoError(t, err)
 			forecast, err := model.Forecast(5)
 			require.NoError(t, err)
-			assert.Equal(t, len(forecast), 5)
+			assert.Equal(t, 5, len(forecast))
 			for i := range forecast {
-				assert.InDelta(t, forecast[i], tc.expected[i], 1e-6)
+				assert.InDelta(t, tc.expected[i], forecast[i], 1e-6)
 			}
 		})
 	}
@@ -70,10 +70,10 @@ func TestARIMA(t *testing.T) {
 
 	forecast, err := model.Forecast(5)
 	require.NoError(t, err)
-	assert.Equal(t, len(forecast), 5)
-	assert.Equal(t, forecast[0], 11.0)
-	assert.Equal(t, forecast[1], 12.0)
-	assert.Equal(t, forecast[2], 13.0)
-	assert.Equal(t, forecast[3], 14.0)
-	assert.Equal(t, forecast[4], 15.0)
+	assert.Equal(t, 5, len(forecast))
+	assert.Equal(t, 11.0, forecast[0])
+	assert.Equal(t, 12.0, forecast[1])
+	assert.Equal(t, 13.0, forecast[2])
+	assert.Equal(t, 14.0, forecast[3])
+	assert.Equal(t, 15.0, forecast[4])
 }
