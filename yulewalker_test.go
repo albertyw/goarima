@@ -77,7 +77,7 @@ func TestAutocorrelationAtLag(t *testing.T) {
 			name:     "Short series",
 			series:   []float64{1, 2},
 			lag:      1,
-			expected: -1.125,
+			expected: -0.125,
 		},
 		{
 			name:     "More complex series",
@@ -109,23 +109,65 @@ func TestBuildAutocorrelationVector(t *testing.T) {
 		expected []float64
 	}{
 		{
+			name:     "Empty series",
+			series:   []float64{},
+			order:    2,
+			expected: []float64{0, 0, 0}, // Expected all zeros for empty series
+		},
+		{
+			name:     "Short series, order 0",
+			series:   []float64{1, 2, 3},
+			order:    0,
+			expected: []float64{2.0 / 3.0},
+		},
+		{
+			name:     "Simple series, order 1",
+			series:   []float64{1, 2, 3, 4, 5},
+			order:    1,
+			expected: []float64{2, 0.8},
+		},
+		{
 			name:     "Simple series, order 2",
 			series:   []float64{1, 2, 3, 4, 5},
 			order:    2,
-			expected: []float64{2.0, 1.0, 0.5}, // Manually calculated autocorrelations
+			expected: []float64{2.0, 0.8, -0.2},
+		},
+		{
+			name:     "Another Simple series, order 2",
+			series:   []float64{1, 2, 3, 4, 5},
+			order:    2,
+			expected: []float64{2, 0.8, -0.2},
 		},
 		{
 			name:     "Series with negative values, order 1",
 			series:   []float64{-1, 0, 1},
 			order:    1,
-			expected: []float64{0.0, -1.0 / 3.0},
+			expected: []float64{2.0 / 3.0, -0.0},
+		},
+		{
+			name:     "Another Series with negative values, order 1",
+			series:   []float64{-1, 0, 1, 2},
+			order:    1,
+			expected: []float64{1.25, 0.3125},
+		},
+		{
+			name:     "Series with zero values, order 1",
+			series:   []float64{0, 1, 0, 1},
+			order:    1,
+			expected: []float64{0.25, -0.1875},
+		},
+		{
+			name:     "Order greater than series length",
+			series:   []float64{1, 2, 3},
+			order:    5,
+			expected: []float64{2.0 / 3.0, 0, -1.0 / 3.0, 0, 0, 0},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			actual := buildAutocorrelationVector(tc.series, tc.order)
-			assert.Equal(t, tc.expected, actual)
+			assert.InDeltaSlice(t, tc.expected, actual, 1e-6)
 		})
 	}
 }
