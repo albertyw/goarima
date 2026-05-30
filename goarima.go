@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-
-	"github.com/albertyw/gaussian"
 )
 
 /* ---------------------------------------------------------------
@@ -109,43 +107,16 @@ func (m *ARIMA) Fit(series []float64) error {
 		z[i] = y[i] - m.mu
 	}
 
-	// 3. estimate AR part on the centered series
-	if m.p > 0 {
-		phi, sigma2, err := solveYuleWalker(z, m.p)
-		if err != nil {
-			return fmt.Errorf("Yule‑Walker estimation failed: %w", err)
-		}
-		m.phi = phi
-		m.sigma2 = sigma2
-	} else {
-		m.phi = []float64{}
+	// 3. estimate the ARMA coefficients on the centered series
+	phi, theta, residuals, err := hannanRissanen(z, m.p, m.q)
+	if err != nil {
+		return fmt.Errorf("ARMA estimation failed: %w", err)
 	}
+	m.phi = phi
+	m.theta = theta
+	m.sigma2 = meanSquare(residuals)
 
-	// 4. compute residuals of the AR part
-	n := len(z)
-	residuals := make([]float64, n)
-	for t := 0; t < n; t++ {
-		var sum float64
-		for j := 0; j < m.p; j++ {
-			if t-j-1 >= 0 {
-				sum += m.phi[j] * z[t-j-1]
-			}
-		}
-		residuals[t] = z[t] - sum
-	}
-
-	// 5. estimate MA part (if q>0)
-	if m.q > 0 {
-		theta, err := estimateMA(residuals, m.q)
-		if err != nil {
-			return fmt.Errorf("MA estimation failed: %w", err)
-		}
-		m.theta = theta
-	} else {
-		m.theta = []float64{}
-	}
-
-	// 6. store last centered observations and residuals
+	// 4. store last centered observations and residuals
 	if m.p > 0 {
 		m.lastY = z[len(z)-m.p:]
 	} else {
@@ -231,58 +202,6 @@ func (m *ARIMA) forecastDiff(h int) ([]float64, error) {
 	return diffPred, nil
 }
 
-/* --------------------------------------------------------------------------------
-   Ordinary Least Squares (OLS) regression – used for the approximate MA estimation
-   -------------------------------------------------------------------------------- */
-
-func estimateMA(residuals []float64, q int) ([]float64, error) {
-	if q <= 0 || len(residuals) <= q {
-		return nil, errors.New("invalid MA order or too few residuals")
-	}
-	// Constant (e.g. all-zero) residuals yield a singular system; the MA part
-	// is then identically zero.
-	if isConstant(residuals) {
-		return make([]float64, q), nil
-	}
-	n := len(residuals)
-	p := q
-
-	// Build X (lagged residuals) and y (current residuals)
-	X := make([][]float64, n-q)
-	yVec := make([]float64, n-q)
-	for i := q; i < n; i++ {
-		row := make([]float64, q)
-		for j := 0; j < q; j++ {
-			row[j] = residuals[i-j-1]
-		}
-		X[i-q] = row
-		yVec[i-q] = residuals[i]
-	}
-
-	// OLS: (XᵀX)β = Xᵀy
-	// Compute XᵀX and Xᵀy
-	XtX := make([][]float64, p)
-	for i := 0; i < p; i++ {
-		XtX[i] = make([]float64, p)
-	}
-	Xty := make([]float64, p)
-
-	for i := 0; i < n-q; i++ {
-		for j := 0; j < p; j++ {
-			Xty[j] += X[i][j] * yVec[i]
-			for k := 0; k < p; k++ {
-				XtX[j][k] += X[i][j] * X[i][k]
-			}
-		}
-	}
-
-	theta, err := gaussian.Solve(XtX, Xty)
-	if err != nil {
-		return nil, err
-	}
-	return theta, nil
-}
-
 // mean returns the arithmetic mean of s, or 0 for an empty slice.
 func mean(s []float64) float64 {
 	if len(s) == 0 {
@@ -291,6 +210,19 @@ func mean(s []float64) float64 {
 	var sum float64
 	for _, v := range s {
 		sum += v
+	}
+	return sum / float64(len(s))
+}
+
+// meanSquare returns the mean of the squares of s, i.e. the residual variance
+// when s holds zero-mean residuals. It is 0 for an empty slice.
+func meanSquare(s []float64) float64 {
+	if len(s) == 0 {
+		return 0
+	}
+	var sum float64
+	for _, v := range s {
+		sum += v * v
 	}
 	return sum / float64(len(s))
 }
