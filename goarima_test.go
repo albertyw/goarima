@@ -60,6 +60,43 @@ func TestSimpleARIMA(t *testing.T) {
 	}
 }
 
+func TestNewARIMAErrors(t *testing.T) {
+	_, err := NewARIMA(-1, 0, 0)
+	assert.Error(t, err)
+	_, err = NewARIMA(0, 0, 0)
+	assert.Error(t, err)
+}
+
+func TestFitTooShort(t *testing.T) {
+	model, err := NewARIMA(2, 1, 0)
+	require.NoError(t, err)
+	assert.Error(t, model.Fit([]float64{1, 2}))
+}
+
+func TestForecastInvalidHorizon(t *testing.T) {
+	model, err := NewARIMA(1, 0, 0)
+	require.NoError(t, err)
+	require.NoError(t, model.Fit([]float64{1, 2, 1, 2, 1, 2}))
+	_, err = model.Forecast(0)
+	assert.Error(t, err)
+}
+
+func TestGetters(t *testing.T) {
+	data := []float64{1, 2, 1, 2, 1, 2, 1, 2, 1, 2}
+	model, err := NewARIMA(1, 0, 0)
+	require.NoError(t, err)
+	require.NoError(t, model.Fit(data))
+
+	p, d, q := model.Orders()
+	assert.Equal(t, [3]int{1, 0, 0}, [3]int{p, d, q})
+	assert.Len(t, model.Phi(), 1)
+	assert.Empty(t, model.Theta())
+	assert.Len(t, model.LastY(), 1)
+	assert.Empty(t, model.LastE())
+	assert.Equal(t, 2.0, model.LastOrig())
+	assert.GreaterOrEqual(t, model.Sigma2(), 0.0)
+}
+
 func TestARIMA(t *testing.T) {
 	data := []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	p, d, q := 1, 1, 1
