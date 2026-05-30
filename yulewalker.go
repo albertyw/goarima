@@ -2,19 +2,10 @@ package goarima
 
 import (
 	"errors"
-	"fmt"
-	"io"
 	"math"
-	"os"
 
 	"github.com/albertyw/gaussian"
 )
-
-var output io.Writer
-
-func init() {
-	output = os.Stdout
-}
 
 // autocorrelationAtLag calculates the autocorrelation at a given lag for a given time series.
 // This function has been manually verified.
@@ -144,29 +135,36 @@ func solveYuleWalker(series []float64, order int) ([]float64, float64, error) {
 		return nil, 0, errors.New("solveYuleWalker: order must be >0 and <len(series)")
 	}
 
-	// a. Autocorrelation vector r[0 … order]
+	// Autocorrelation vector r[0 … order], then solve from it.
 	rVec := buildAutocorrelationVector(series, order)
+	return solveYuleWalkerFromAutocov(rVec, order)
+}
 
-	// b. Toeplitz matrix R
-	R := buildToeplitzMatrix(rVec)
-
-	// c. RHS vector b
-	b := buildRHSVector(rVec)
-
-	fmt.Fprintf(output, "R:\n")
-	for i := range R {
-		fmt.Fprintf(output, "%v\n", R[i])
+// solveYuleWalkerFromAutocov solves the Yule‑Walker equations directly from an
+// autocovariance vector rVec = [r0, r1, …, r_order] and returns the AR(order)
+// coefficients and the white‑noise variance σ² = r0 – Σ aᵢ·rᵢ.
+//
+// A constant series has r0 == 0, which makes the Toeplitz system singular; in
+// that case the AR coefficients are taken to be zero with zero variance.
+func solveYuleWalkerFromAutocov(rVec []float64, order int) ([]float64, float64, error) {
+	if order <= 0 || order >= len(rVec) {
+		return nil, 0, errors.New("solveYuleWalkerFromAutocov: order must be >0 and <len(rVec)")
 	}
-	fmt.Fprintf(output, "b:\n")
-	fmt.Fprintf(output, "%v\n", b)
 
-	// d. Solve R * a = b
+	// Degenerate (constant) series: no autocovariance to solve against.
+	if math.Abs(rVec[0]) < 1e-12 {
+		return make([]float64, order), 0, nil
+	}
+
+	// Toeplitz matrix R and RHS vector b, then solve R * a = b.
+	R := buildToeplitzMatrix(rVec)
+	b := buildRHSVector(rVec)
 	coeffs, err := gaussian.Solve(R, b)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	// e. Estimate σ² = r0 – Σ a_i * r_i
+	// Estimate σ² = r0 – Σ aᵢ · rᵢ.
 	var sigma2 float64
 	for i, a := range coeffs {
 		sigma2 += a * rVec[i+1] // r[1]…r[order]

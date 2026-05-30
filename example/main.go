@@ -12,7 +12,7 @@ import (
 )
 
 //go:embed data/airpassengers.csv
-var airPassengersCSV string
+var airPassengersCSV string // nolint: unused
 
 // readAirPassengersData reads the embedded CSV data for the AirPassengers dataset
 // nolint: unused

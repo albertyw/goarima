@@ -15,12 +15,15 @@ func TestSimpleARIMA(t *testing.T) {
 		expected []float64
 	}{
 		{
+			// A stationary AR(1) fitted to this series gets phi = -0.9 and mean
+			// 1.5, so the forecast is a damped oscillation decaying toward 1.5
+			// rather than an exact repetition of the 1,2 pattern.
 			name:     "ARIMA(1,0,0) with oscillating data",
 			data:     []float64{1, 2, 1, 2, 1, 2, 1, 2, 1, 2},
 			p:        1,
 			d:        0,
 			q:        0,
-			expected: []float64{1, 2, 1, 2, 1},
+			expected: []float64{1.05, 1.905, 1.1355, 1.82805, 1.204755},
 		},
 		{
 			name:     "ARIMA(1,1,1) with simple data",

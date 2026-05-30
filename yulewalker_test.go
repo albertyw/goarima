@@ -142,7 +142,7 @@ func TestBuildAutocorrelationVector(t *testing.T) {
 			name:     "Series with negative values, order 1",
 			series:   []float64{-1, 0, 1},
 			order:    1,
-			expected: []float64{2.0 / 3.0, -0.0},
+			expected: []float64{2.0 / 3.0, 0.0},
 		},
 		{
 			name:     "Another Series with negative values, order 1",
@@ -257,24 +257,36 @@ func TestSolveFromAutocov(t *testing.T) {
 		sigma2   float64
 	}{
 		{
+			// R = [[1, 0.5], [0.5, 1]], b = [0.5, 0.25] -> phi = [0.5, 0];
+			// sigma2 = 1 - (0.5*0.5 + 0*0.25) = 0.75.
 			name:     "Simple AR1",
 			rVec:     []float64{1, 0.5, 0.25},
 			p:        2,
 			expected: []float64{0.5, 0.0},
-			sigma2:   0.5,
+			sigma2:   0.75,
 		},
 		{
+			// R = [[1, 0.6], [0.6, 1]], b = [0.6, 0.2] -> phi = [0.75, -0.25];
+			// sigma2 = 1 - (0.75*0.6 + (-0.25)*0.2) = 0.6.
 			name:     "AR2",
 			rVec:     []float64{1, 0.6, 0.2},
 			p:        2,
-			expected: []float64{0.2, 0.6},
-			sigma2:   1,
+			expected: []float64{0.75, -0.25},
+			sigma2:   0.6,
+		},
+		{
+			// Constant series (r0 = 0) is degenerate: zero coefficients, zero variance.
+			name:     "Degenerate constant series",
+			rVec:     []float64{0, 0, 0},
+			p:        2,
+			expected: []float64{0.0, 0.0},
+			sigma2:   0,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			phi, sigma2, err := solveYuleWalker(tc.rVec, tc.p)
+			phi, sigma2, err := solveYuleWalkerFromAutocov(tc.rVec, tc.p)
 			assert.NoError(t, err)
 
 			assert.InDeltaSlice(t, tc.expected, phi, 1e-6)
