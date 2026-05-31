@@ -7,6 +7,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestRandomWalkFits(t *testing.T) {
+	// ARIMA(0,1,0) is the random-walk(-with-drift) baseline: no AR or MA terms,
+	// just differencing. It must fit and forecast, not error out.
+	series := []float64{1, 3, 2, 5, 4, 7, 6, 9, 8, 11}
+	model, err := NewARIMA(0, 1, 0)
+	require.NoError(t, err)
+	require.NoError(t, model.Fit(series))
+
+	forecast, err := model.Forecast(3)
+	require.NoError(t, err)
+	require.Len(t, forecast, 3)
+	// drift = mean of first differences = (11-1)/9; forecast extrapolates it.
+	drift := (11.0 - 1.0) / 9.0
+	assert.InDelta(t, 11+drift, forecast[0], 1e-9)
+	assert.InDelta(t, 11+2*drift, forecast[1], 1e-9)
+	assert.InDelta(t, 11+3*drift, forecast[2], 1e-9)
+}
+
 func TestSimpleARIMA(t *testing.T) {
 	var testCases = []struct {
 		name     string
