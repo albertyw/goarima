@@ -96,8 +96,8 @@ original scale.
 ## Examples
 
 The [`example/`](example/) directory contains a runnable demo that fits both
-`AutoARIMA` and fixed-order models to the classic AirPassengers and Lynx
-datasets:
+`AutoARIMA` and fixed-order models to several classic datasets (AirPassengers,
+Lynx, wine sales, sunspots, wool production, and Australian population):
 
 ```sh
 cd example && go run .

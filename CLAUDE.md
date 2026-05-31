@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `make cover` — runs `make test` then prints per-function coverage.
 - `make benchmark` — `go test -bench=. -benchmem`.
 - Run a single test: `go test -run TestHannanRissanenARMA ./...`
-- Run the demo: `cd example && go run .` (AutoARIMA + fixed-order fits on AirPassengers/Lynx).
+- Run the demo: `cd example && go run .` (AutoARIMA + fixed-order fits on several classic datasets).
 - `make example` — runs the Go demo, then the statsmodels reference (`example/generate_statsmodels.py`) for a side-by-side comparison. Needs the `example/env` Python venv; skips gracefully if absent. Not part of `make test`/CI.
 
 CI (`.drone.yml`) runs `make test`, `make race`, `make cover`, `make benchmark`, the profiling targets, and `checkmake` on the Makefile.
@@ -51,7 +51,7 @@ The `ARIMA` struct fields are unexported; access state through the getter method
 
 ## Example data & reference scripts
 
-- `example/main.go` runs `AutoARIMA` on `example/data/airpassengers.csv` and `lynx.csv` (newline-separated values).
+- `example/main.go` runs `AutoARIMA` and fixed-order fits on several `example/data/*.csv` datasets (newline-separated values): airpassengers, lynx, wineind, sunspots, woolyrnq, austres. CSVs are exported from the vendored pmdarima `*.py` generators (or statsmodels for sunspots).
 - `integration_test.go` embeds the AirPassengers CSV and asserts sensible (not reference-exact) behavior.
 - `example/generate_statsmodels.py` is the Python reference: it fits `statsmodels` ARIMA at the same fixed orders as the Go `runFixed` examples for a side-by-side comparison (run via `make example`). statsmodels has no `auto_arima`, so the `AutoARIMA` examples are Go-only. The Python deps are pinned in `example/pyproject.toml` and installed under `example/env`; reference-exact fixtures are not wired into the Go tests.
 

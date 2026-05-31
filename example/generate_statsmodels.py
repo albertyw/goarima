@@ -51,11 +51,19 @@ def run_fixed(name: str, series: list[float], order: tuple[int, int, int], horiz
 def main() -> None:
     air_passengers = load("airpassengers.csv")
     lynx = load("lynx.csv")
+    wineind = load("wineind.csv")
+    woolyrnq = load("woolyrnq.csv")
+    austres = load("austres.csv")
+    sunspots = load("sunspots.csv")
 
     print("# Fixed orders (compare with goarima example/main.go)\n")
     run_fixed("Oscillating", oscillating(100), (1, 0, 0), 6)
     run_fixed("AirPassengers", air_passengers, (0, 1, 1), 12)
     run_fixed("Lynx", lynx, (1, 0, 1), 10)
+    run_fixed("WineInd", wineind, (2, 0, 1), 12)
+    run_fixed("WoolyRnq", woolyrnq, (0, 1, 1), 8)
+    run_fixed("AustRes", austres, (1, 1, 1), 8)
+    run_fixed("Sunspots", sunspots, (2, 0, 1), 10)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	_ "embed"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -15,6 +16,18 @@ var airPassengersCSV string
 
 //go:embed data/lynx.csv
 var lynxCSV string
+
+//go:embed data/wineind.csv
+var wineindCSV string
+
+//go:embed data/sunspots.csv
+var sunspotsCSV string
+
+//go:embed data/woolyrnq.csv
+var woolyrnqCSV string
+
+//go:embed data/austres.csv
+var austresCSV string
 
 // parseSeries reads a newline-separated list of numbers into a slice of floats.
 func parseSeries(csv string) ([]float64, error) {
@@ -84,26 +97,40 @@ func runFixed(name string, series []float64, p, d, q, horizon int) {
 	report("goarima", name, model, horizon)
 }
 
+// mustParse parses an embedded dataset, exiting on the (unexpected) error.
+func mustParse(name, csv string) []float64 {
+	series, err := parseSeries(csv)
+	if err != nil {
+		fmt.Printf("%s: %v\n", name, err)
+		os.Exit(1)
+	}
+	return series
+}
+
 func main() {
-	airPassengers, err := parseSeries(airPassengersCSV)
-	if err != nil {
-		fmt.Printf("AirPassengers: %v\n", err)
-		return
-	}
-	lynx, err := parseSeries(lynxCSV)
-	if err != nil {
-		fmt.Printf("Lynx: %v\n", err)
-		return
-	}
+	airPassengers := mustParse("AirPassengers", airPassengersCSV)
+	lynx := mustParse("Lynx", lynxCSV)
+	wineind := mustParse("WineInd", wineindCSV)
+	sunspots := mustParse("Sunspots", sunspotsCSV)
+	woolyrnq := mustParse("WoolyRnq", woolyrnqCSV)
+	austres := mustParse("AustRes", austresCSV)
 
 	fmt.Println("# Automatic order selection (goarima only)")
 	fmt.Println()
 	runAuto("AirPassengers", airPassengers, 12)
 	runAuto("Lynx", lynx, 10)
+	runAuto("WineInd", wineind, 12)
+	runAuto("Sunspots", sunspots, 10)
+	runAuto("WoolyRnq", woolyrnq, 8)
+	runAuto("AustRes", austres, 8)
 
 	fmt.Println("# Fixed orders (compare with generate_statsmodels.py)")
 	fmt.Println()
 	runFixed("Oscillating", oscillating(100), 1, 0, 0, 6) // pure AR
 	runFixed("AirPassengers", airPassengers, 0, 1, 1, 12) // differencing + MA
 	runFixed("Lynx", lynx, 1, 0, 1, 10)                   // ARMA(1,1)
+	runFixed("WineInd", wineind, 2, 0, 1, 12)             // ARMA(2,1)
+	runFixed("WoolyRnq", woolyrnq, 0, 1, 1, 8)            // differencing + MA
+	runFixed("AustRes", austres, 1, 1, 1, 8)              // I(1) ARMA(1,1)
+	runFixed("Sunspots", sunspots, 2, 0, 1, 10)           // cyclic AR(2) + MA
 }
