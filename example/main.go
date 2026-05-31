@@ -34,34 +34,76 @@ func parseSeries(csv string) ([]float64, error) {
 	return series, scanner.Err()
 }
 
-// runExample fits an automatically-selected ARIMA model to the data and prints
-// the chosen orders together with a forecast.
-func runExample(name, csv string, horizon int) {
-	series, err := parseSeries(csv)
-	if err != nil {
-		fmt.Printf("%s: %v\n", name, err)
-		return
+// oscillating returns n repetitions of the values 1, 2.
+func oscillating(n int) []float64 {
+	s := make([]float64, 0, 2*n)
+	for i := 0; i < n; i++ {
+		s = append(s, 1.0, 2.0)
 	}
+	return s
+}
 
-	model, err := goarima.AutoARIMA(series, 5, 2, 5)
-	if err != nil {
-		fmt.Printf("%s: %v\n", name, err)
-		return
-	}
-
+// report prints a model's orders, coefficients, and forecast in a layout that
+// mirrors the statsmodels reference script for easy side-by-side comparison.
+func report(label, name string, model *goarima.ARIMA, horizon int) {
 	p, d, q := model.Orders()
-	fmt.Printf("=== %s (%d observations) ===\n", name, len(series))
-	fmt.Printf("Selected model: ARIMA(%d,%d,%d)\n", p, d, q)
-
 	forecast, err := model.Forecast(horizon)
 	if err != nil {
-		fmt.Printf("%s: %v\n", name, err)
+		fmt.Printf("[%s] %s: %v\n", label, name, err)
 		return
 	}
-	fmt.Printf("Forecast (next %d): %.2f\n\n", horizon, forecast)
+	fmt.Printf("[%s] %s  ARIMA(%d,%d,%d)\n", label, name, p, d, q)
+	fmt.Printf("  phi:      %.4f\n", model.Phi())
+	fmt.Printf("  theta:    %.4f\n", model.Theta())
+	fmt.Printf("  forecast: %.4f\n\n", forecast)
+}
+
+// runAuto fits an automatically-selected ARIMA model (end-to-end demonstration;
+// statsmodels has no auto_arima equivalent, so this side has no Python mirror).
+func runAuto(name string, series []float64, horizon int) {
+	model, err := goarima.AutoARIMA(series, 5, 2, 5)
+	if err != nil {
+		fmt.Printf("[goarima] %s: %v\n", name, err)
+		return
+	}
+	report("goarima", name, model, horizon)
+}
+
+// runFixed fits an ARIMA model with explicit orders. These examples mirror the
+// statsmodels reference exactly so the two outputs can be compared.
+func runFixed(name string, series []float64, p, d, q, horizon int) {
+	model, err := goarima.NewARIMA(p, d, q)
+	if err != nil {
+		fmt.Printf("[goarima] %s: %v\n", name, err)
+		return
+	}
+	if err := model.Fit(series); err != nil {
+		fmt.Printf("[goarima] %s: %v\n", name, err)
+		return
+	}
+	report("goarima", name, model, horizon)
 }
 
 func main() {
-	runExample("AirPassengers", airPassengersCSV, 12)
-	runExample("Lynx", lynxCSV, 10)
+	airPassengers, err := parseSeries(airPassengersCSV)
+	if err != nil {
+		fmt.Printf("AirPassengers: %v\n", err)
+		return
+	}
+	lynx, err := parseSeries(lynxCSV)
+	if err != nil {
+		fmt.Printf("Lynx: %v\n", err)
+		return
+	}
+
+	fmt.Println("# Automatic order selection (goarima only)")
+	fmt.Println()
+	runAuto("AirPassengers", airPassengers, 12)
+	runAuto("Lynx", lynx, 10)
+
+	fmt.Println("# Fixed orders (compare with generate_statsmodels.py)")
+	fmt.Println()
+	runFixed("Oscillating", oscillating(100), 1, 0, 0, 6) // pure AR
+	runFixed("AirPassengers", airPassengers, 0, 1, 1, 12) // differencing + MA
+	runFixed("Lynx", lynx, 1, 0, 1, 10)                   // ARMA(1,1)
 }

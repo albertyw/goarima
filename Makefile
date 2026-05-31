@@ -37,6 +37,11 @@ race:
 benchmark:
 	go test -bench=. -benchmem
 
+.PHONY:example
+example:
+	cd example && go run .
+	cd example && if [ -x env/bin/python ]; then env/bin/python generate_statsmodels.py; else echo "skipping statsmodels reference: create example/env (python3 -m venv env && env/bin/pip install -e .)"; fi
+
 .PHONY:cpuprof
 cpuprof:
 	go tool pprof -top cpuprofile.out | head -n 20
