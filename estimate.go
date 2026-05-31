@@ -97,6 +97,16 @@ func hannanRissanen(z []float64, p, q int) ([]float64, []float64, []float64, err
 	theta := make([]float64, q)
 	copy(theta, beta[p:])
 
+	// Stage 2 is unconstrained OLS, so it can land outside the stationary /
+	// invertible region. Such coefficients make the forecast recursion diverge,
+	// so reject them rather than return a model that explodes.
+	if !isStationary(phi) {
+		return nil, nil, nil, errors.New("hannanRissanen: estimated AR part is non-stationary")
+	}
+	if !isInvertible(theta) {
+		return nil, nil, nil, errors.New("hannanRissanen: estimated MA part is non-invertible")
+	}
+
 	return phi, theta, armaResiduals(z, phi, theta), nil
 }
 

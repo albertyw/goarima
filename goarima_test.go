@@ -25,6 +25,16 @@ func TestRandomWalkFits(t *testing.T) {
 	assert.InDelta(t, 11+3*drift, forecast[2], 1e-9)
 }
 
+func TestNonInvertibleReturnsError(t *testing.T) {
+	// First-differencing this series gives a strongly negatively autocorrelated
+	// sequence, so an MA(1) fit lands outside the invertible region. The model
+	// must reject it with an error rather than return a diverging forecast.
+	series := []float64{1, 3, 2, 5, 4, 7, 6, 9, 8, 11}
+	model, err := NewARIMA(0, 1, 1)
+	require.NoError(t, err)
+	assert.Error(t, model.Fit(series))
+}
+
 func TestSimpleARIMA(t *testing.T) {
 	var testCases = []struct {
 		name     string
