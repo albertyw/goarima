@@ -39,8 +39,7 @@ benchmark:
 
 .PHONY:example
 example:
-	cd example && go run .
-	cd example && if [ -x env/bin/python ]; then env/bin/python generate_statsmodels.py; else echo "skipping statsmodels reference: create example/env (python3 -m venv env && env/bin/pip install -e .)"; fi
+	cd example && if [ -x env/bin/python ]; then env/bin/python compare.py; else echo "no example/env; running goarima only (python3 -m venv env && env/bin/pip install -e . for the statsmodels comparison)" && go run .; fi
 
 .PHONY:cpuprof
 cpuprof:

@@ -103,11 +103,12 @@ Lynx, wine sales, sunspots, wool production, and Australian population):
 cd example && go run .
 ```
 
-`make example` additionally runs a [statsmodels](https://www.statsmodels.org/)
-reference script (`example/generate_statsmodels.py`) at the same fixed orders,
-printing both outputs for a side-by-side comparison. It requires the Python
-environment described in `example/pyproject.toml` (installed under
-`example/env`) and is skipped gracefully if that environment is absent.
+`make example` runs `example/compare.py`, which fits the same fixed-order
+models with [statsmodels](https://www.statsmodels.org/) and prints the goarima
+and statsmodels results interleaved per dataset for easy comparison. It requires
+the Python environment described in `example/pyproject.toml` (installed under
+`example/env`) and falls back to the goarima-only demo if that environment is
+absent.
 
 ## Limitations
 

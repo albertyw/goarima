@@ -124,7 +124,7 @@ func main() {
 	runAuto("WoolyRnq", woolyrnq, 8)
 	runAuto("AustRes", austres, 8)
 
-	fmt.Println("# Fixed orders (compare with generate_statsmodels.py)")
+	fmt.Println("# Fixed orders (compared against statsmodels via compare.py)")
 	fmt.Println()
 	runFixed("Oscillating", oscillating(100), 1, 0, 0, 6) // pure AR
 	runFixed("AirPassengers", airPassengers, 0, 1, 1, 12) // differencing + MA
