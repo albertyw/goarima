@@ -4,11 +4,14 @@ A pure-Go implementation of ARIMA (AutoRegressive Integrated Moving Average)
 time-series modeling, with automatic order selection.
 
 It fits and forecasts ARIMA(p, d, q) models using only linear algebra — no CGo
-and no numerical optimizer. Coefficients are estimated with the
-[Hannan-Rissanen](https://en.wikipedia.org/wiki/Hannan%E2%80%93Rissanen_algorithm)
+and no numerical optimizer. Coefficients are estimated with the Hannan-Rissanen
 method, so fitting is deterministic and fast. The trade-off is that estimates
 are approximate: they will not match a maximum-likelihood library
 (statsmodels / pmdarima) exactly. See [Limitations](#limitations).
+
+**New to time series?** [`docs/arima.md`](docs/arima.md) explains ARIMA and every
+algorithm implemented here — in plain language with the key equations — for
+readers new to time-series forecasting.
 
 ## Install
 
@@ -92,6 +95,10 @@ series ──Difference(d)──► center (−mean) ──► Hannan-Rissanen �
 `Forecast` runs the AR+MA recursion forward (future errors = 0), adds the mean
 back, and integrates once per differencing level to return values on the
 original scale.
+
+For a full, beginner-friendly walkthrough of these algorithms — AR/MA/I,
+Yule-Walker, Hannan-Rissanen, and AutoARIMA's order selection — with the key
+equations and links for further reading, see [`docs/arima.md`](docs/arima.md).
 
 ## Examples
 

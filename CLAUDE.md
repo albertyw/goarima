@@ -57,4 +57,5 @@ The `ARIMA` struct fields are unexported; access state through the getter method
 
 ## Notes
 
+- `docs/arima.md` is the beginner-friendly conceptual explainer (AR/MA/I, Yule-Walker, Hannan-Rissanen, AutoARIMA) with key equations and further-reading links; it cross-references the source files and is linked from the README. Keep it in sync if the algorithms change.
 - Go 1.25; module path `github.com/albertyw/goarima`.
