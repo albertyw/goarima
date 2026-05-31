@@ -15,12 +15,15 @@ func TestSimpleARIMA(t *testing.T) {
 		expected []float64
 	}{
 		{
+			// A stationary AR(1) fitted to this series gets phi = -0.9 and mean
+			// 1.5, so the forecast is a damped oscillation decaying toward 1.5
+			// rather than an exact repetition of the 1,2 pattern.
 			name:     "ARIMA(1,0,0) with oscillating data",
 			data:     []float64{1, 2, 1, 2, 1, 2, 1, 2, 1, 2},
 			p:        1,
 			d:        0,
 			q:        0,
-			expected: []float64{1, 2, 1, 2, 1},
+			expected: []float64{1.05, 1.905, 1.1355, 1.82805, 1.204755},
 		},
 		{
 			name:     "ARIMA(1,1,1) with simple data",
@@ -55,6 +58,43 @@ func TestSimpleARIMA(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNewARIMAErrors(t *testing.T) {
+	_, err := NewARIMA(-1, 0, 0)
+	assert.Error(t, err)
+	_, err = NewARIMA(0, 0, 0)
+	assert.Error(t, err)
+}
+
+func TestFitTooShort(t *testing.T) {
+	model, err := NewARIMA(2, 1, 0)
+	require.NoError(t, err)
+	assert.Error(t, model.Fit([]float64{1, 2}))
+}
+
+func TestForecastInvalidHorizon(t *testing.T) {
+	model, err := NewARIMA(1, 0, 0)
+	require.NoError(t, err)
+	require.NoError(t, model.Fit([]float64{1, 2, 1, 2, 1, 2}))
+	_, err = model.Forecast(0)
+	assert.Error(t, err)
+}
+
+func TestGetters(t *testing.T) {
+	data := []float64{1, 2, 1, 2, 1, 2, 1, 2, 1, 2}
+	model, err := NewARIMA(1, 0, 0)
+	require.NoError(t, err)
+	require.NoError(t, model.Fit(data))
+
+	p, d, q := model.Orders()
+	assert.Equal(t, [3]int{1, 0, 0}, [3]int{p, d, q})
+	assert.Len(t, model.Phi(), 1)
+	assert.Empty(t, model.Theta())
+	assert.Len(t, model.LastY(), 1)
+	assert.Empty(t, model.LastE())
+	assert.Equal(t, 2.0, model.LastOrig())
+	assert.GreaterOrEqual(t, model.Sigma2(), 0.0)
 }
 
 func TestARIMA(t *testing.T) {

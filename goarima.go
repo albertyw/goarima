@@ -3,8 +3,7 @@ package goarima
 import (
 	"errors"
 	"fmt"
-
-	"github.com/albertyw/gaussian"
+	"math"
 )
 
 /* ---------------------------------------------------------------
@@ -14,8 +13,10 @@ import (
 type ARIMA struct {
 	p, d, q      int       // AR, differencing, MA non-seasonal orders
 	phi, theta   []float64 // AR & MA coefficients
-	lastY, lastE []float64 // last p differenced observations & last q residuals
+	lastY, lastE []float64 // last p centered differenced observations & last q residuals
 	lastOrig     float64   // last original value (for undifferencing)
+	mu           float64   // mean of the differenced series (added back when forecasting)
+	anchors      []float64 // last value of the series differenced 0..d-1 times (for integration)
 	sigma2       float64   // variance of the residuals (not used in forecasting)
 }
 
@@ -35,6 +36,8 @@ func NewARIMA(p, d, q int) (*ARIMA, error) {
 		lastY:    make([]float64, p),
 		lastE:    make([]float64, q),
 		lastOrig: 0.0,
+		mu:       0.0,
+		anchors:  make([]float64, d),
 		sigma2:   0.0,
 	}, nil
 }
@@ -87,48 +90,35 @@ func (m *ARIMA) Fit(series []float64) error {
 	// Remember the last value of the original series (for later undifferencing)
 	m.lastOrig = series[len(series)-1]
 
-	// 1. difference the series d times
+	// 1. record integration anchors – the last value of the series differenced
+	//    0,1,…,d-1 times – so forecasts can be lifted back to the original scale.
+	m.anchors = make([]float64, m.d)
+	cur := series
+	for k := 0; k < m.d; k++ {
+		m.anchors[k] = cur[len(cur)-1]
+		cur = Difference(cur, 1)
+	}
+
+	// 2. difference the series d times and center it on its mean
 	y := Difference(series, m.d)
+	m.mu = mean(y)
+	z := make([]float64, len(y))
+	for i := range y {
+		z[i] = y[i] - m.mu
+	}
 
-	// 2. estimate AR part
+	// 3. estimate the ARMA coefficients on the centered series
+	phi, theta, residuals, err := hannanRissanen(z, m.p, m.q)
+	if err != nil {
+		return fmt.Errorf("ARMA estimation failed: %w", err)
+	}
+	m.phi = phi
+	m.theta = theta
+	m.sigma2 = meanSquare(residuals)
+
+	// 4. store last centered observations and residuals
 	if m.p > 0 {
-		phi, sigma2, err := solveYuleWalker(y, m.p)
-		if err != nil {
-			return fmt.Errorf("Yule‑Walker estimation failed: %w", err)
-		}
-		m.phi = phi
-		m.sigma2 = sigma2
-	} else {
-		m.phi = []float64{}
-	}
-
-	// 3. compute residuals of the AR part
-	n := len(y)
-	residuals := make([]float64, n)
-	for t := 0; t < n; t++ {
-		var sum float64
-		for j := 0; j < m.p; j++ {
-			if t-j-1 >= 0 {
-				sum += m.phi[j] * y[t-j-1]
-			}
-		}
-		residuals[t] = y[t] - sum
-	}
-
-	// 4. estimate MA part (if q>0)
-	if m.q > 0 {
-		theta, err := estimateMA(residuals, m.q)
-		if err != nil {
-			return fmt.Errorf("MA estimation failed: %w", err)
-		}
-		m.theta = theta
-	} else {
-		m.theta = []float64{}
-	}
-
-	// 5. store last observations and residuals
-	if m.p > 0 {
-		m.lastY = y[len(y)-m.p:]
+		m.lastY = z[len(z)-m.p:]
 	} else {
 		m.lastY = []float64{}
 	}
@@ -150,13 +140,16 @@ func (m *ARIMA) Forecast(h int) ([]float64, error) {
 		return nil, errors.New("forecast horizon must be positive")
 	}
 	// 1. forecast on the differenced scale
-	diffPred, err := m.forecastDiff(h)
+	pred, err := m.forecastDiff(h)
 	if err != nil {
 		return nil, err
 	}
-	// 2. undifference to obtain forecast on the original scale
-	origPred := Undifference(diffPred, m.lastOrig)
-	return origPred, nil
+	// 2. integrate back to the original scale, undoing each level of differencing
+	//    from the innermost outward. For d == 0 this is a no-op.
+	for k := m.d - 1; k >= 0; k-- {
+		pred = Undifference(pred, m.anchors[k])
+	}
+	return pred, nil
 }
 
 /* ---------------------------------------------------------------
@@ -190,9 +183,10 @@ func (m *ARIMA) forecastDiff(h int) ([]float64, error) {
 				val += m.theta[j] * e[len(e)-1-j]
 			}
 		}
-		diffPred[i] = val
+		// val is on the centered scale; add the mean back for the differenced-scale forecast
+		diffPred[i] = val + m.mu
 
-		// update buffers
+		// update buffers (centered scale)
 		y = append(y, val)
 		if len(y) > m.p {
 			y = y[1:]
@@ -208,127 +202,42 @@ func (m *ARIMA) forecastDiff(h int) ([]float64, error) {
 	return diffPred, nil
 }
 
-/* ---------------------------------------------------------------
-   Utility functions
-   --------------------------------------------------------------- */
-
-// Absolute value for ints
-func absInt(x int) int {
-	if x < 0 {
-		return -x
+// mean returns the arithmetic mean of s, or 0 for an empty slice.
+func mean(s []float64) float64 {
+	if len(s) == 0 {
+		return 0
 	}
-	return x
+	var sum float64
+	for _, v := range s {
+		sum += v
+	}
+	return sum / float64(len(s))
 }
 
-// Difference the series d times
-func Difference(y []float64, d int) []float64 {
-	res := make([]float64, len(y))
-	copy(res, y)
-	for k := 0; k < d; k++ {
-		if len(res) < 2 {
-			return []float64{}
-		}
-		tmp := make([]float64, len(res)-1)
-		for i := 0; i < len(res)-1; i++ {
-			tmp[i] = res[i+1] - res[i]
-		}
-		res = tmp
+// meanSquare returns the mean of the squares of s, i.e. the residual variance
+// when s holds zero-mean residuals. It is 0 for an empty slice.
+func meanSquare(s []float64) float64 {
+	if len(s) == 0 {
+		return 0
 	}
-	return res
+	var sum float64
+	for _, v := range s {
+		sum += v * v
+	}
+	return sum / float64(len(s))
 }
 
-// Undo the differencing – recover the original scale
-func Undifference(diffPred []float64, lastOrig float64) []float64 {
-	res := make([]float64, len(diffPred))
-	cum := lastOrig
-	for i, d := range diffPred {
-		cum += d
-		res[i] = cum
+// isConstant reports whether every element of s equals the first (within a
+// small tolerance), i.e. the series has effectively zero variance.
+func isConstant(s []float64) bool {
+	if len(s) == 0 {
+		return true
 	}
-	return res
-}
-
-/* ---------------------------------------------------------------
-   Yule‑Walker estimation of the AR part
-   --------------------------------------------------------------- */
-
-func solveYuleWalkerOld(series []float64, p int) ([]float64, error) {
-	if p <= 0 || len(series) <= p {
-		return nil, errors.New("invalid AR order or too few observations")
-	}
-
-	// Compute autocovariances γ0 … γp
-	gamma := make([]float64, p+1)
-	n := len(series)
-	for k := 0; k <= p; k++ {
-		var sum float64
-		for i := k; i < n; i++ {
-			sum += series[i] * series[i-k]
-		}
-		gamma[k] = sum / float64(n-k)
-	}
-
-	// Build the Yule‑Walker matrix R and RHS r
-	R := make([][]float64, p)
-	r := make([]float64, p)
-	for i := 0; i < p; i++ {
-		r[i] = gamma[i+1]
-		R[i] = make([]float64, p)
-		for j := 0; j < p; j++ {
-			R[i][j] = gamma[absInt(i-j)]
+	const eps = 1e-12
+	for _, v := range s {
+		if math.Abs(v-s[0]) > eps {
+			return false
 		}
 	}
-
-	phi, err := gaussian.Solve(R, r)
-	if err != nil {
-		return nil, err
-	}
-	return phi, nil
-}
-
-/* --------------------------------------------------------------------------------
-   Ordinary Least Squares (OLS) regression – used for the approximate MA estimation
-   -------------------------------------------------------------------------------- */
-
-func estimateMA(residuals []float64, q int) ([]float64, error) {
-	if q <= 0 || len(residuals) <= q {
-		return nil, errors.New("invalid MA order or too few residuals")
-	}
-	n := len(residuals)
-	p := q
-
-	// Build X (lagged residuals) and y (current residuals)
-	X := make([][]float64, n-q)
-	yVec := make([]float64, n-q)
-	for i := q; i < n; i++ {
-		row := make([]float64, q)
-		for j := 0; j < q; j++ {
-			row[j] = residuals[i-j-1]
-		}
-		X[i-q] = row
-		yVec[i-q] = residuals[i]
-	}
-
-	// OLS: (XᵀX)β = Xᵀy
-	// Compute XᵀX and Xᵀy
-	XtX := make([][]float64, p)
-	for i := 0; i < p; i++ {
-		XtX[i] = make([]float64, p)
-	}
-	Xty := make([]float64, p)
-
-	for i := 0; i < n-q; i++ {
-		for j := 0; j < p; j++ {
-			Xty[j] += X[i][j] * yVec[i]
-			for k := 0; k < p; k++ {
-				XtX[j][k] += X[i][j] * X[i][k]
-			}
-		}
-	}
-
-	theta, err := gaussian.Solve(XtX, Xty)
-	if err != nil {
-		return nil, err
-	}
-	return theta, nil
+	return true
 }

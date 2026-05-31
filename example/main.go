@@ -1,10 +1,10 @@
 package main
 
 import (
+	"bufio"
 	_ "embed"
 	"fmt"
-	"math"
-	"math/rand"
+	"os"
 	"strconv"
 	"strings"
 
@@ -14,202 +14,123 @@ import (
 //go:embed data/airpassengers.csv
 var airPassengersCSV string
 
-// readAirPassengersData reads the embedded CSV data for the AirPassengers dataset
-// nolint: unused
-func readAirPassengersData() ([]float64, error) {
+//go:embed data/lynx.csv
+var lynxCSV string
+
+//go:embed data/wineind.csv
+var wineindCSV string
+
+//go:embed data/sunspots.csv
+var sunspotsCSV string
+
+//go:embed data/woolyrnq.csv
+var woolyrnqCSV string
+
+//go:embed data/austres.csv
+var austresCSV string
+
+// parseSeries reads a newline-separated list of numbers into a slice of floats.
+func parseSeries(csv string) ([]float64, error) {
 	var series []float64
-	// Read file and parse CSV data
-	lines := strings.Split(airPassengersCSV, "\n")
-	for _, line := range lines {
+	scanner := bufio.NewScanner(strings.NewReader(csv))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
-			continue // skip empty lines
+			continue
 		}
-		value, err := strconv.ParseFloat(line, 64) // parse the line as a float
+		v, err := strconv.ParseFloat(line, 64)
 		if err != nil {
-			return nil, fmt.Errorf("error parsing line '%s': %v", line, err)
+			return nil, fmt.Errorf("parsing %q: %w", line, err)
 		}
-		series = append(series, value)
+		series = append(series, v)
 	}
-	return series, nil
+	return series, scanner.Err()
 }
 
-// generateARIMA11 generates synthetic ARIMA(1,1,1) data
-// nolint: unused
-func generateARIMA11(seriesLen int, seed int64) []float64 {
-	// The underlying process is an ARMA(1,1) of length seriesLen+1.
-	// We then difference it once to obtain an ARIMA(1,1,1) series
-	// of length seriesLen.
-	randGen := rand.New(rand.NewSource(seed))
-
-	total := seriesLen + 1 // +1 for the extra point needed for differencing
-
-	y := make([]float64, total)
-	e := make([]float64, total)
-
-	// initialise
-	y[0] = randGen.NormFloat64()
-	e[0] = randGen.NormFloat64()
-
-	for t := 1; t < total; t++ {
-		et := randGen.NormFloat64()
-		e[t] = et
-		y[t] = 0.5*y[t-1] + et + 0.4*e[t-1]
+// oscillating returns n repetitions of the values 1, 2.
+func oscillating(n int) []float64 {
+	s := make([]float64, 0, 2*n)
+	for i := 0; i < n; i++ {
+		s = append(s, 1.0, 2.0)
 	}
-
-	// difference once
-	x := goarima.Difference(y, 1) // length = seriesLen
-	return x
+	return s
 }
 
-// predictRandomData will fit the model and compare forecast with true values
-// nolint: unused
-func predictRandomData() {
-	// --- 1. Create synthetic data --------------------------------
-	totalSeries := 210   // 200 for training + 10 for true future values
-	seed := int64(12345) // fixed seed – data are reproducible
-	series := generateARIMA11(totalSeries, seed)
-
-	// --- 2. Fit ARIMA(1,1,1) to the first 200 observations -------
-	train := series[:200]
-	model, err := goarima.NewARIMA(1, 1, 1)
-	if err != nil {
-		fmt.Printf("Model creation error: %v\n", err)
-		return
-	}
-	if err = model.Fit(train); err != nil {
-		fmt.Printf("Fitting error: %v\n", err)
-		return
-	}
-
-	// --- 3. Forecast the next 10 points --------------------------
-	forecast, err := model.Forecast(10)
-	if err != nil {
-		fmt.Printf("Forecast error: %v\n", err)
-		return
-	}
-
-	// --- 4. True values (we know them because the data were generated)
-	trueFuture := series[200:210]
-
-	// --- 5. Print results ---------------------------------------
-	fmt.Println("ARIMA(1,1,1) Fit & Forecast Example")
-	fmt.Println("===================================")
-	fmt.Printf("AR coefficient  (φ1): %.4f\n", model.Phi()[0])
-	_, _, q := model.Orders()
-	if q > 0 {
-		fmt.Printf("MA coefficient (θ1): %.4f\n", model.Theta()[0])
-	}
-	fmt.Println()
-	fmt.Println("True future values   :", trueFuture)
-	fmt.Println("Forecasted values    :", forecast)
-
-	// --- 6. Compute mean absolute percentage error (MAPE) -------
-	var mape float64
-	for i := 0; i < 10; i++ {
-		if trueFuture[i] != 0 {
-			mape += math.Abs((trueFuture[i] - forecast[i]) / trueFuture[i])
-		}
-	}
-	mape = 100 * mape / 10
-	fmt.Printf("\nMean Absolute Percentage Error (MAPE): %.2f%%\n", mape)
-}
-
-// predictAirPassengers fits an ARIMA model to the AirPassengers dataset and forecasts the next 12 months
-// nolint: unused
-func predictAirPassengers() {
-	// --- 1. Read the AirPassengers dataset ----------------------
-	series, err := readAirPassengersData()
-	if err != nil {
-		fmt.Printf("Error reading AirPassengers data: %v\n", err)
-		return
-	}
-
-	// --- 2. Fit ARIMA to the entire dataset --------------
-	model, err := goarima.NewARIMA(1, 0, 0)
-	if err != nil {
-		fmt.Printf("Model creation error: %v\n", err)
-		return
-	}
-	if err = model.Fit(series); err != nil {
-		fmt.Printf("Fitting error: %v\n", err)
-		return
-	}
-
-	// --- 3. Forecast the next 12 months --------------------------
-	forecast, err := model.Forecast(12)
-	if err != nil {
-		fmt.Printf("Forecast error: %v\n", err)
-		return
-	}
-
-	// --- 4. Print results ---------------------------------------
-	fmt.Println("ARIMA Fit & Forecast for AirPassengers")
-	fmt.Println("===============================================")
+// report prints a model's orders, coefficients, and forecast in a layout that
+// mirrors the statsmodels reference script for easy side-by-side comparison.
+func report(label, name string, model *goarima.ARIMA, horizon int) {
 	p, d, q := model.Orders()
-	fmt.Printf("ARIMA(%d,%d,%d) model fitted\n", p, d, q)
-	fmt.Printf("AR coefficient (Phi): %.4f\n", model.Phi()[0])
-	if q > 0 {
-		// Only print MA coefficient if q > 0
-		// This is a check to ensure we don't access an empty slice
-		fmt.Printf("MA coefficient (Theta): %.4f\n", model.Theta()[0])
+	forecast, err := model.Forecast(horizon)
+	if err != nil {
+		fmt.Printf("[%s] %s: %v\n", label, name, err)
+		return
 	}
-	fmt.Printf("LastY: %.4f\n", series[len(series)-1])
-	fmt.Printf("LastE: %.4f\n", model.LastE())
-	fmt.Printf("Sigma2: %.4f\n", model.Sigma2())
-	fmt.Println("Forecasted values for next 12 months:")
-	for _, f := range forecast {
-		fmt.Println(f)
-	}
+	fmt.Printf("[%s] %s  ARIMA(%d,%d,%d)\n", label, name, p, d, q)
+	fmt.Printf("  phi:      %.4f\n", model.Phi())
+	fmt.Printf("  theta:    %.4f\n", model.Theta())
+	fmt.Printf("  forecast: %.4f\n\n", forecast)
 }
 
-func predictOscillatingData() {
-	series := []float64{}
-	for range 50 {
-		series = append(series, 1.0, 2.0)
-		// series = append(series, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 5.0, 4.0, 3.0, 2.0)
-	}
-
-	// --- 2. Fit ARIMA to the entire dataset --------------
-	model, err := goarima.NewARIMA(1, 0, 0)
+// runAuto fits an automatically-selected ARIMA model (end-to-end demonstration;
+// statsmodels has no auto_arima equivalent, so this side has no Python mirror).
+func runAuto(name string, series []float64, horizon int) {
+	model, err := goarima.AutoARIMA(series, 5, 2, 5)
 	if err != nil {
-		fmt.Printf("Model creation error: %v\n", err)
+		fmt.Printf("[goarima] %s: %v\n", name, err)
 		return
 	}
-	if err = model.Fit(series); err != nil {
-		fmt.Printf("Fitting error: %v\n", err)
-		return
-	}
-
-	// --- 3. Forecast the next 12 periods --------------------------
-	forecast, err := model.Forecast(12)
-	if err != nil {
-		fmt.Printf("Forecast error: %v\n", err)
-		return
-	}
-
-	// --- 4. Print results ---------------------------------------
-	fmt.Println("ARIMA Fit & Forecast for Oscillating Data")
-	fmt.Println("===============================================")
-	p, d, q := model.Orders()
-	fmt.Printf("ARIMA(%d,%d,%d) model fitted\n", p, d, q)
-	fmt.Printf("AR coefficient (Phi): %.4f\n", model.Phi()[0])
-	if q > 0 {
-		// Only print MA coefficient if q > 0
-		// This is a check to ensure we don't access an empty slice
-		fmt.Printf("MA coefficient (Theta): %.4f\n", model.Theta()[0])
-	}
-	fmt.Printf("LastY: %.4f\n", series[len(series)-1])
-	fmt.Printf("LastE: %.4f\n", model.LastE())
-	fmt.Printf("Sigma2: %.4f\n", model.Sigma2())
-	fmt.Println("Forecasted values for next 12 months:")
-	for _, f := range forecast {
-		fmt.Println(f)
-	}
+	report("goarima", name, model, horizon)
 }
 
-// main function to run the example
+// runFixed fits an ARIMA model with explicit orders. These examples mirror the
+// statsmodels reference exactly so the two outputs can be compared.
+func runFixed(name string, series []float64, p, d, q, horizon int) {
+	model, err := goarima.NewARIMA(p, d, q)
+	if err != nil {
+		fmt.Printf("[goarima] %s: %v\n", name, err)
+		return
+	}
+	if err := model.Fit(series); err != nil {
+		fmt.Printf("[goarima] %s: %v\n", name, err)
+		return
+	}
+	report("goarima", name, model, horizon)
+}
+
+// mustParse parses an embedded dataset, exiting on the (unexpected) error.
+func mustParse(name, csv string) []float64 {
+	series, err := parseSeries(csv)
+	if err != nil {
+		fmt.Printf("%s: %v\n", name, err)
+		os.Exit(1)
+	}
+	return series
+}
+
 func main() {
-	// predictRandomData()
-	// predictAirPassengers()
-	predictOscillatingData()
+	airPassengers := mustParse("AirPassengers", airPassengersCSV)
+	lynx := mustParse("Lynx", lynxCSV)
+	wineind := mustParse("WineInd", wineindCSV)
+	sunspots := mustParse("Sunspots", sunspotsCSV)
+	woolyrnq := mustParse("WoolyRnq", woolyrnqCSV)
+	austres := mustParse("AustRes", austresCSV)
+
+	fmt.Println("# Automatic order selection (goarima only)")
+	fmt.Println()
+	runAuto("AirPassengers", airPassengers, 12)
+	runAuto("Lynx", lynx, 10)
+	runAuto("WineInd", wineind, 12)
+	runAuto("Sunspots", sunspots, 10)
+	runAuto("WoolyRnq", woolyrnq, 8)
+	runAuto("AustRes", austres, 8)
+
+	fmt.Println("# Fixed orders (compared against statsmodels via compare.py)")
+	fmt.Println()
+	runFixed("Oscillating", oscillating(100), 1, 0, 0, 6) // pure AR
+	runFixed("AirPassengers", airPassengers, 0, 1, 1, 12) // differencing + MA
+	runFixed("Lynx", lynx, 1, 0, 1, 10)                   // ARMA(1,1)
+	runFixed("WineInd", wineind, 2, 0, 1, 12)             // ARMA(2,1)
+	runFixed("WoolyRnq", woolyrnq, 0, 1, 1, 8)            // differencing + MA
+	runFixed("AustRes", austres, 1, 1, 1, 8)              // I(1) ARMA(1,1)
+	runFixed("Sunspots", sunspots, 2, 0, 1, 10)           // cyclic AR(2) + MA
 }
