@@ -204,18 +204,19 @@ forecast can keep trending, because integration accumulates the steps.
 `AutoARIMA(series, maxP, maxD, maxQ)` (in `autoarima.go`) picks `p`, `d`, `q`
 for you, in two stages.
 
-### Choosing d (variance heuristic)
+### Choosing d (KPSS stationarity test)
 
-Difference the series repeatedly (up to `maxD`) and keep going while the variance
-keeps falling; stop just before it stops shrinking. The idea: a trend inflates
-variance, and differencing it away reduces variance, but over-differencing a
-stationary series eventually increases it again.
+Difference the series repeatedly (up to `maxD`) until it tests **stationary**,
+and use that count as `d`. Stationarity is judged by the **KPSS test**
+(Kwiatkowski-Phillips-Schmidt-Shin): it measures how far the running cumulative
+sum of the demeaned series wanders relative to its long-run variance. A large
+statistic means the level drifts (non-stationary) → difference and test again; a
+small one means it is stable → stop. goarima uses the 5% level-stationarity
+critical value (`kpss.go`).
 
-> **Caveat (a known limitation):** this simple rule **over-differences**
-> series with strong positive autocorrelation. For example, sunspots are already
-> roughly stationary, yet the variance keeps falling under differencing, so the
-> heuristic may pick `d=2`. A proper stationarity test (KPSS or ADF) is the
-> standard fix and is on the roadmap.
+This replaces an earlier variance heuristic that **over-differenced**
+already-stationary but strongly autocorrelated series (e.g. it pushed sunspots
+to `d=2`). The KPSS test keeps such series at `d=0` or `d=1`.
 
 ### Choosing p and q (AIC grid search)
 
@@ -242,9 +243,6 @@ leaves out things a production statistics package would include:
 
 - **Not maximum-likelihood.** Hannan-Rissanen is approximate; expect coefficients
   close to — but not identical to — statsmodels/pmdarima.
-- **No stationarity/invertibility enforcement.** Estimated coefficients are not
-  constrained to be "well-behaved", so some order choices can produce a diverging
-  forecast.
 - **No seasonal (SARIMA) terms**, and **point forecasts only** — no prediction
   intervals.
 

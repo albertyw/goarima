@@ -7,8 +7,8 @@ import (
 
 // AutoARIMA selects ARIMA orders automatically and returns a fitted model.
 //
-// The differencing order d is chosen by a variance heuristic (keep differencing
-// while the series variance decreases, up to maxD). The non-seasonal orders p
+// The differencing order d is chosen by the KPSS stationarity test (difference
+// until the series tests stationary, up to maxD). The non-seasonal orders p
 // and q are then chosen by an exhaustive grid search over 0..maxP and 0..maxQ
 // that minimizes the Akaike Information Criterion (AIC); the (0,0) combination
 // is skipped. Candidate orders whose fit fails (e.g. too few observations) are
@@ -60,25 +60,19 @@ func AutoARIMA(series []float64, maxP, maxD, maxQ int) (*ARIMA, error) {
 	return best, nil
 }
 
-// selectD chooses the differencing order using a variance heuristic: it keeps
-// differencing while the variance of the differenced series strictly decreases,
-// up to maxD, and returns the order just before the variance stops falling.
+// selectD chooses the differencing order with the KPSS stationarity test: it
+// differences the series until it tests level-stationary, up to maxD, and
+// returns that order. This avoids the over-differencing that a variance
+// heuristic suffers on positively-autocorrelated (but already stationary) data.
 func selectD(series []float64, maxD int) int {
-	bestD := 0
-	prevVar := variance(series)
-	for d := 1; d <= maxD; d++ {
-		diffed := Difference(series, d)
-		if len(diffed) < 2 {
-			break
+	cur := series
+	for d := 0; d < maxD; d++ {
+		if len(cur) < 3 || kpssLevelStationary(cur) {
+			return d
 		}
-		v := variance(diffed)
-		if v >= prevVar {
-			break
-		}
-		prevVar = v
-		bestD = d
+		cur = Difference(cur, 1)
 	}
-	return bestD
+	return maxD
 }
 
 // aic returns the Akaike Information Criterion for a model with the given
@@ -93,18 +87,4 @@ func aic(n int, sigma2 float64, p, q int) float64 {
 	}
 	k := p + q + 1
 	return float64(n)*math.Log(sigma2) + 2*float64(k)
-}
-
-// variance returns the population variance of s, or 0 for an empty slice.
-func variance(s []float64) float64 {
-	if len(s) == 0 {
-		return 0
-	}
-	m := mean(s)
-	var sum float64
-	for _, v := range s {
-		diff := v - m
-		sum += diff * diff
-	}
-	return sum / float64(len(s))
 }
