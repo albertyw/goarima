@@ -62,6 +62,16 @@ func TestAutoARIMAAirPassengers(t *testing.T) {
 	}
 }
 
+// TestNonInvertibleAirPassengersRejected is the Phase 9 regression: fitting
+// ARIMA(2,1,1) to AirPassengers yields a non-invertible MA estimate, which
+// previously made Forecast diverge to ~1e35. Fit must now reject it.
+func TestNonInvertibleAirPassengersRejected(t *testing.T) {
+	series := parseTestSeries(t, airPassengersCSV)
+	model, err := NewARIMA(2, 1, 1)
+	require.NoError(t, err)
+	assert.Error(t, model.Fit(series))
+}
+
 // TestAutoARIMASunspotsNotOverDifferenced is the Phase 10 regression: the old
 // variance heuristic differenced the (already roughly stationary, cyclic)
 // sunspots series twice and produced a runaway negative forecast. With the KPSS

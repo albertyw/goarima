@@ -123,6 +123,9 @@ This is an approximate, non-seasonal implementation. In particular:
 
 - **Hannan-Rissanen is not MLE.** Coefficients are close to, but not identical
   to, statsmodels/pmdarima.
+- **Non-invertible/non-stationary fixed-order fits are rejected, not repaired.**
+  `Fit` returns an error rather than estimating into the valid region, so some
+  explicit `(p,d,q)` requests fail instead of producing a model.
 - **No seasonal (SARIMA) terms** and **point forecasts only** (no prediction
   intervals).
 

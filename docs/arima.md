@@ -243,6 +243,9 @@ leaves out things a production statistics package would include:
 
 - **Not maximum-likelihood.** Hannan-Rissanen is approximate; expect coefficients
   close to — but not identical to — statsmodels/pmdarima.
+- **Unstable fits are rejected, not repaired.** If an explicit `(p,d,q)` lands
+  outside the stationary/invertible region, `Fit` returns an error instead of
+  re-estimating into the valid region.
 - **No seasonal (SARIMA) terms**, and **point forecasts only** — no prediction
   intervals.
 

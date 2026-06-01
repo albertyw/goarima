@@ -36,7 +36,7 @@ series ──Difference(d)──► y ──center (−mu)──► z (zero-mean
 
 Forecasting (`ARIMA.Forecast`) runs `forecastDiff` on the centered scale (rolling AR+MA recursion, future errors = 0), adds `mu` back, then integrates with `Undifference` once per differencing level using the stored `anchors` (a no-op when `d == 0`).
 
-`AutoARIMA` (`autoarima.go`): `selectD` picks `d` with the KPSS level-stationarity test (`kpss.go`) — difference until the series tests stationary, up to maxD; then a grid search over `p,q` minimizes `aic(n, sigma2, p, q)`, skipping `(0,0)` and any fit that errors.
+`AutoARIMA` (`autoarima.go`): `selectD` picks `d` with the KPSS level-stationarity test (`kpss.go`) — difference until the series tests stationary, up to maxD; then a grid search over `p,q` minimizes `aic(n, sigma2, p, q)`, skipping `(0,0)` and any fit that errors (non-stationary/non-invertible fits are rejected in `estimate.go`, see `stability.go`).
 
 Key files:
 - `goarima.go` — `ARIMA` struct, `NewARIMA`, `Fit`, `Forecast`/`forecastDiff`, getters, `mean`/`meanSquare`/`isConstant`.
