@@ -26,7 +26,15 @@ func hannanRissanen(z []float64, p, q int) ([]float64, []float64, []float64, err
 		return make([]float64, p), make([]float64, q), make([]float64, n), nil
 	}
 
-	// Pure AR: Yule-Walker is exact for this case, no MA stage needed.
+	// No AR or MA terms (e.g. ARIMA(0,d,0), a random walk with drift): the model
+	// is pure differencing plus the mean, so there are no coefficients to fit and
+	// the residuals are the centered series itself.
+	if p == 0 && q == 0 {
+		return []float64{}, []float64{}, armaResiduals(z, nil, nil), nil
+	}
+
+	// Pure AR: Yule-Walker is exact for this case, no MA stage needed. The
+	// biased-autocovariance Yule-Walker estimate is always stationary.
 	if q == 0 {
 		phi, _, err := solveYuleWalker(z, p)
 		if err != nil {
@@ -88,6 +96,16 @@ func hannanRissanen(z []float64, p, q int) ([]float64, []float64, []float64, err
 	copy(phi, beta[:p])
 	theta := make([]float64, q)
 	copy(theta, beta[p:])
+
+	// Stage 2 is unconstrained OLS, so it can land outside the stationary /
+	// invertible region. Such coefficients make the forecast recursion diverge,
+	// so reject them rather than return a model that explodes.
+	if !isStationary(phi) {
+		return nil, nil, nil, errors.New("hannanRissanen: estimated AR part is non-stationary")
+	}
+	if !isInvertible(theta) {
+		return nil, nil, nil, errors.New("hannanRissanen: estimated MA part is non-invertible")
+	}
 
 	return phi, theta, armaResiduals(z, phi, theta), nil
 }

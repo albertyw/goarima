@@ -15,6 +15,9 @@ import (
 //go:embed example/data/airpassengers.csv
 var airPassengersCSV string
 
+//go:embed example/data/sunspots.csv
+var sunspotsCSV string
+
 func parseTestSeries(t *testing.T, csv string) []float64 {
 	t.Helper()
 	var series []float64
@@ -57,4 +60,41 @@ func TestAutoARIMAAirPassengers(t *testing.T) {
 		assert.False(t, math.IsNaN(f) || math.IsInf(f, 0))
 		assert.Positive(t, f) // passenger counts are positive
 	}
+}
+
+// TestNonInvertibleAirPassengersRejected is the Phase 9 regression: fitting
+// ARIMA(2,1,1) to AirPassengers yields a non-invertible MA estimate, which
+// previously made Forecast diverge to ~1e35. Fit must now reject it.
+func TestNonInvertibleAirPassengersRejected(t *testing.T) {
+	series := parseTestSeries(t, airPassengersCSV)
+	model, err := NewARIMA(2, 1, 1)
+	require.NoError(t, err)
+	assert.Error(t, model.Fit(series))
+}
+
+// TestAutoARIMASunspotsNotOverDifferenced is the Phase 10 regression: the old
+// variance heuristic differenced the (already roughly stationary, cyclic)
+// sunspots series twice and produced a runaway negative forecast. With the KPSS
+// test, d stays at 0 or 1 and the forecast is finite.
+func TestAutoARIMASunspotsNotOverDifferenced(t *testing.T) {
+	series := parseTestSeries(t, sunspotsCSV)
+	model, err := AutoARIMA(series, 5, 2, 5)
+	require.NoError(t, err)
+
+	_, d, _ := model.Orders()
+	assert.LessOrEqual(t, d, 1) // must not over-difference to d=2
+
+	forecast, err := model.Forecast(10)
+	require.NoError(t, err)
+	for _, f := range forecast {
+		assert.False(t, math.IsNaN(f) || math.IsInf(f, 0))
+	}
+	// A sensible cyclic forecast peaks well above zero, unlike the old runaway.
+	var max float64
+	for _, f := range forecast {
+		if f > max {
+			max = f
+		}
+	}
+	assert.Positive(t, max)
 }

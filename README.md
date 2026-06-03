@@ -25,7 +25,7 @@ Requires Go 1.25+.
 
 ### Automatic order selection
 
-`AutoARIMA` chooses `d` by a variance heuristic and then grid-searches `p` and
+`AutoARIMA` chooses `d` with a KPSS stationarity test and then grid-searches `p` and
 `q` (up to the given maxima) to minimize the AIC, returning a fitted model.
 
 ```go
@@ -123,10 +123,9 @@ This is an approximate, non-seasonal implementation. In particular:
 
 - **Hannan-Rissanen is not MLE.** Coefficients are close to, but not identical
   to, statsmodels/pmdarima.
-- **`d` selection over-differences positively-autocorrelated series.** The
-  variance heuristic is simpler than a KPSS/ADF stationarity test.
-- **No stationarity/invertibility enforcement.** A fitted model with a
-  non-invertible MA term can produce a diverging forecast.
+- **Non-invertible/non-stationary fixed-order fits are rejected, not repaired.**
+  `Fit` returns an error rather than estimating into the valid region, so some
+  explicit `(p,d,q)` requests fail instead of producing a model.
 - **No seasonal (SARIMA) terms** and **point forecasts only** (no prediction
   intervals).
 
