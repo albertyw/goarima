@@ -14,9 +14,15 @@ import (
 // is skipped. Candidate orders whose fit fails (e.g. too few observations) are
 // skipped.
 //
-// Any FitOption (e.g. WithCSSRefinement) is threaded through to every candidate
-// fit and the final refit, so candidates are scored and the final model is fit
-// with the same options.
+// Any FitOption (e.g. WithCSSRefinement, WithMLE) is threaded through to every
+// candidate fit and the final refit, so candidates are scored and the final
+// model is fit with the same options.
+//
+// Note that the AIC used for selection is always computed from the residual
+// variance (see aic), even when WithMLE is supplied: the refinement lowers each
+// candidate's residual variance and thus influences selection, but the score is
+// not the exact Gaussian-likelihood AIC. A selectable likelihood-based criterion
+// is left to a later phase.
 func AutoARIMA(series []float64, maxP, maxD, maxQ int, opts ...FitOption) (*ARIMA, error) {
 	if maxP < 0 || maxD < 0 || maxQ < 0 {
 		return nil, errors.New("AutoARIMA: max orders must be non-negative")

@@ -85,6 +85,7 @@ func (m *ARIMA) Sigma2() float64 {
 // fitConfig holds optional Fit behavior toggled by FitOption values.
 type fitConfig struct {
 	refine bool // refine the Hannan-Rissanen estimate by minimizing the CSS
+	mle    bool // refine the Hannan-Rissanen estimate by exact Gaussian MLE
 }
 
 // FitOption configures optional Fit behavior. The zero set of options keeps the
@@ -98,6 +99,18 @@ type FitOption func(*fitConfig)
 // lower CSS than the Hannan-Rissanen seed, otherwise the seed is used unchanged.
 func WithCSSRefinement() FitOption {
 	return func(c *fitConfig) { c.refine = true }
+}
+
+// WithMLE enables exact Gaussian maximum-likelihood refinement of the
+// Hannan-Rissanen coefficient estimate via the Kalman filter (see mle.go and
+// statespace.go). It matches the exact-likelihood fit of modern statsmodels
+// (method="statespace") and, like WithCSSRefinement, is never worse than the
+// Hannan-Rissanen seed: a refined estimate is kept only if it is stationary,
+// invertible, and has a strictly lower negative log-likelihood, otherwise the
+// seed is used unchanged. If both WithMLE and WithCSSRefinement are supplied,
+// MLE takes precedence.
+func WithMLE() FitOption {
+	return func(c *fitConfig) { c.mle = true }
 }
 
 func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
@@ -136,11 +149,18 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
 		return fmt.Errorf("ARMA estimation failed: %w", err)
 	}
 
-	// Optionally refine the coefficients by minimizing the CSS, then recompute
-	// the residuals so sigma2 and the stored lastE reflect the refined fit.
-	if cfg.refine && len(phi)+len(theta) > 0 {
-		phi, theta = refineCSS(z, phi, theta)
-		residuals = armaResiduals(z, phi, theta)
+	// Optionally refine the coefficients, then recompute the residuals so sigma2
+	// and the stored lastE reflect the refined fit. Exact MLE takes precedence
+	// over CSS when both are requested.
+	if len(phi)+len(theta) > 0 {
+		switch {
+		case cfg.mle:
+			phi, theta = refineMLE(z, phi, theta)
+			residuals = armaResiduals(z, phi, theta)
+		case cfg.refine:
+			phi, theta = refineCSS(z, phi, theta)
+			residuals = armaResiduals(z, phi, theta)
+		}
 	}
 
 	m.phi = phi

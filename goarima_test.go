@@ -1,6 +1,7 @@
 package goarima
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -148,6 +149,66 @@ func TestFitWithCSSRefinementRandomWalkNoop(t *testing.T) {
 	model, err := NewARIMA(0, 1, 0)
 	require.NoError(t, err)
 	require.NoError(t, model.Fit(series, WithCSSRefinement()))
+	assert.Empty(t, model.Phi())
+	assert.Empty(t, model.Theta())
+}
+
+func TestFitWithMLEChangesCoefficients(t *testing.T) {
+	// The MLE option must actually refine away from the Hannan-Rissanen seed,
+	// not silently no-op.
+	series := genARMA11(2000, 0.5, 0.4, 13)
+
+	plain, err := NewARIMA(1, 0, 1)
+	require.NoError(t, err)
+	require.NoError(t, plain.Fit(series))
+
+	mle, err := NewARIMA(1, 0, 1)
+	require.NoError(t, err)
+	require.NoError(t, mle.Fit(series, WithMLE()))
+
+	assert.NotEqual(t, plain.Phi()[0], mle.Phi()[0])
+	assert.True(t, isStationary(mle.Phi()))
+	assert.True(t, isInvertible(mle.Theta()))
+}
+
+func TestFitWithMLEFiniteForecast(t *testing.T) {
+	// An MLE-refined fit must still produce a finite forecast.
+	series := genARMA11(1000, 0.6, 0.3, 21)
+	model, err := NewARIMA(1, 0, 1)
+	require.NoError(t, err)
+	require.NoError(t, model.Fit(series, WithMLE()))
+
+	forecast, err := model.Forecast(5)
+	require.NoError(t, err)
+	for _, f := range forecast {
+		assert.False(t, math.IsNaN(f) || math.IsInf(f, 0))
+	}
+}
+
+func TestFitWithMLETakesPrecedenceOverCSS(t *testing.T) {
+	// When both options are supplied, MLE wins (matching modern statsmodels'
+	// statespace default), so the fit equals an MLE-only fit.
+	series := genARMA11(2000, 0.5, 0.4, 11)
+
+	both, err := NewARIMA(1, 0, 1)
+	require.NoError(t, err)
+	require.NoError(t, both.Fit(series, WithCSSRefinement(), WithMLE()))
+
+	mleOnly, err := NewARIMA(1, 0, 1)
+	require.NoError(t, err)
+	require.NoError(t, mleOnly.Fit(series, WithMLE()))
+
+	assert.Equal(t, mleOnly.Phi(), both.Phi())
+	assert.Equal(t, mleOnly.Theta(), both.Theta())
+}
+
+func TestFitWithMLERandomWalkNoop(t *testing.T) {
+	// ARIMA(0,1,0) has no coefficients to refine; the option must be a harmless
+	// no-op rather than an error.
+	series := []float64{1, 3, 2, 5, 4, 7, 6, 9, 8, 11}
+	model, err := NewARIMA(0, 1, 0)
+	require.NoError(t, err)
+	require.NoError(t, model.Fit(series, WithMLE()))
 	assert.Empty(t, model.Phi())
 	assert.Empty(t, model.Theta())
 }
