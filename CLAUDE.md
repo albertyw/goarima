@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-`goarima` is a pure-Go implementation of ARIMA (AutoRegressive Integrated Moving Average) time-series modeling. It is a library (package `goarima`) with a separate `example/` command demonstrating usage. Linear systems are solved via the external `github.com/albertyw/gaussian` package.
+`goarima` is a pure-Go implementation of ARIMA (AutoRegressive Integrated Moving Average) time-series modeling. It is a library (package `goarima`) with a separate `example/` command demonstrating usage. Linear systems are solved via the external `github.com/albertyw/gaussian` package; the optional CSS refinement (`refine.go`) uses `gonum.org/v1/gonum/optimize` for the Nelder-Mead search.
 
 ## Commands
 
@@ -21,7 +21,7 @@ CI (`.drone.yml`) runs `make test`, `make race`, `make cover`, `make benchmark`,
 
 ## Architecture
 
-Two entry points: construct a model with explicit orders via `NewARIMA(p,d,q)` + `Fit`, or let `AutoARIMA(series, maxP, maxD, maxQ)` choose the orders and return a fitted model.
+Two entry points: construct a model with explicit orders via `NewARIMA(p,d,q)` + `Fit`, or let `AutoARIMA(series, maxP, maxD, maxQ)` choose the orders and return a fitted model. Both `Fit` and `AutoARIMA` are variadic in `FitOption`; `WithCSSRefinement()` enables the opt-in CSS refinement.
 
 The `ARIMA.Fit` pipeline (`goarima.go`):
 
@@ -34,6 +34,8 @@ series ──Difference(d)──► y ──center (−mu)──► z (zero-mean
                                             store lastY (p obs), lastE (q residuals), mu, anchors
 ```
 
+With `WithCSSRefinement()`, after Stage 2 the `(phi, theta)` seed is passed to `refineCSS` (`refine.go`), which minimizes the conditional sum of squares via gonum Nelder-Mead, penalizing non-stationary/non-invertible parameters and falling back to the seed unless the refined fit has a strictly lower CSS; residuals/`sigma2`/`lastE` are then recomputed from the refined coefficients.
+
 Forecasting (`ARIMA.Forecast`) runs `forecastDiff` on the centered scale (rolling AR+MA recursion, future errors = 0), adds `mu` back, then integrates with `Undifference` once per differencing level using the stored `anchors` (a no-op when `d == 0`).
 
 `AutoARIMA` (`autoarima.go`): `selectD` picks `d` with the KPSS level-stationarity test (`kpss.go`) — difference until the series tests stationary, up to maxD; then a grid search over `p,q` minimizes `aic(n, sigma2, p, q)`, skipping `(0,0)` and any fit that errors (non-stationary/non-invertible fits are rejected in `estimate.go`, see `stability.go`).
@@ -42,10 +44,13 @@ Key files:
 - `goarima.go` — `ARIMA` struct, `NewARIMA`, `Fit`, `Forecast`/`forecastDiff`, getters, `mean`/`meanSquare`/`isConstant`.
 - `diff.go` — `Difference` / `Undifference`.
 - `estimate.go` — `hannanRissanen` (the ARMA estimator), `hrAROrder`, `armaResiduals`.
+- `refine.go` — `refineCSS`, the opt-in conditional-sum-of-squares refinement of the Hannan-Rissanen estimate (gonum Nelder-Mead).
+- `stability.go` — `isStationary` / `isInvertible` (reflection-coefficient root test), used by the fit guards and the refinement penalty.
+- `kpss.go` — `kpssLevelStationary`, the KPSS level-stationarity test used by `selectD`.
 - `yulewalker.go` — autocorrelation helpers and `solveYuleWalker` / `solveYuleWalkerFromAutocov` (used as the Hannan-Rissanen Stage 1 AR fit; guards constant series).
-- `autoarima.go` — `AutoARIMA`, `selectD`, `aic`, `variance`.
+- `autoarima.go` — `AutoARIMA`, `selectD`, `aic`.
 
-Estimation is Hannan-Rissanen (pure linear algebra, no numerical optimizer). It is approximate — it does not match an MLE/CSS library (statsmodels/pmdarima) exactly. A CSS/MLE refinement is a possible future step.
+By default, estimation is Hannan-Rissanen (pure linear algebra, no optimizer); `WithCSSRefinement()` adds a least-squares (CSS) refinement. Both are approximate — they do not match a full maximum-likelihood library (statsmodels/pmdarima) exactly. Exact MLE (Kalman filter) is a possible future step.
 
 The `ARIMA` struct fields are unexported; access state through the getter methods (`Orders`, `Phi`, `Theta`, `LastY`, `LastE`, `LastOrig`, `Sigma2`).
 

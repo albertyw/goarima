@@ -82,7 +82,30 @@ func (m *ARIMA) Sigma2() float64 {
    Public API – Fit
    --------------------------------------------------------------- */
 
-func (m *ARIMA) Fit(series []float64) error {
+// fitConfig holds optional Fit behavior toggled by FitOption values.
+type fitConfig struct {
+	refine bool // refine the Hannan-Rissanen estimate by minimizing the CSS
+}
+
+// FitOption configures optional Fit behavior. The zero set of options keeps the
+// default Hannan-Rissanen estimator.
+type FitOption func(*fitConfig)
+
+// WithCSSRefinement enables conditional-sum-of-squares refinement of the
+// Hannan-Rissanen coefficient estimate (see refine.go). It tightens the
+// coefficients toward a maximum-likelihood fit and can only improve the fit:
+// a refined estimate is kept only if it is stationary, invertible, and has a
+// lower CSS than the Hannan-Rissanen seed, otherwise the seed is used unchanged.
+func WithCSSRefinement() FitOption {
+	return func(c *fitConfig) { c.refine = true }
+}
+
+func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
+	var cfg fitConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
 	if len(series) <= m.d+m.p {
 		return errors.New("series too short for the requested ARIMA model")
 	}
@@ -112,6 +135,14 @@ func (m *ARIMA) Fit(series []float64) error {
 	if err != nil {
 		return fmt.Errorf("ARMA estimation failed: %w", err)
 	}
+
+	// Optionally refine the coefficients by minimizing the CSS, then recompute
+	// the residuals so sigma2 and the stored lastE reflect the refined fit.
+	if cfg.refine && len(phi)+len(theta) > 0 {
+		phi, theta = refineCSS(z, phi, theta)
+		residuals = armaResiduals(z, phi, theta)
+	}
+
 	m.phi = phi
 	m.theta = theta
 	m.sigma2 = meanSquare(residuals)
