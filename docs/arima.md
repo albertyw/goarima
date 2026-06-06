@@ -178,6 +178,26 @@ goarima recomputes the model's one-step residuals (`armaResiduals`) and sets
 `σ²` to their mean square. `σ²` measures how well the model fits and feeds the
 order-selection score in Section 6.
 
+### Optional: CSS refinement
+
+Because Hannan-Rissanen is approximate, goarima offers an opt-in refinement step
+(`Fit(series, WithCSSRefinement())`, in `refine.go`). It treats the
+Hannan-Rissanen result as a starting guess and adjusts `φ`/`θ` to minimize the
+**conditional sum of squares** — the sum of the squared one-step residuals
+`Σ_t ê_t²` — using a derivative-free Nelder-Mead search.
+
+```
+minimize_{φ, θ}  Σ_t e_t²   where  e_t = z_t − Σ φ_i·z_{t-i} − Σ θ_j·e_{t-j}
+```
+
+This is the objective a least-squares ("CSS") ARMA fit uses, so the result lands
+closer to a maximum-likelihood library than the raw Hannan-Rissanen estimate. Two
+safeguards keep it well-behaved: parameter sets outside the stationary/invertible
+region (Section 7) are rejected during the search, and the refined estimate is
+kept only if it actually lowers the CSS — otherwise the Hannan-Rissanen seed is
+used unchanged. Refinement therefore never produces a worse fit than the
+Hannan-Rissanen seed (it finds a local optimum, not necessarily the global one).
+
 ---
 
 ## 5. Forecasting
@@ -241,8 +261,10 @@ comparable at a fixed `d` and sample size, the search runs after `d` is chosen.
 goarima aims to be a clear, dependency-light, pure-Go ARIMA. It deliberately
 leaves out things a production statistics package would include:
 
-- **Not maximum-likelihood.** Hannan-Rissanen is approximate; expect coefficients
-  close to — but not identical to — statsmodels/pmdarima.
+- **Not full maximum-likelihood.** Hannan-Rissanen is approximate, and the
+  optional CSS refinement is least-squares, not the exact (Kalman-filter)
+  likelihood; expect coefficients close to — but not identical to —
+  statsmodels/pmdarima.
 - **Unstable fits are rejected, not repaired.** If an explicit `(p,d,q)` lands
   outside the stationary/invertible region, `Fit` returns an error instead of
   re-estimating into the valid region.

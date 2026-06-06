@@ -3,11 +3,13 @@
 A pure-Go implementation of ARIMA (AutoRegressive Integrated Moving Average)
 time-series modeling, with automatic order selection.
 
-It fits and forecasts ARIMA(p, d, q) models using only linear algebra — no CGo
-and no numerical optimizer. Coefficients are estimated with the Hannan-Rissanen
-method, so fitting is deterministic and fast. The trade-off is that estimates
-are approximate: they will not match a maximum-likelihood library
-(statsmodels / pmdarima) exactly. See [Limitations](#limitations).
+It fits and forecasts ARIMA(p, d, q) models. By default, coefficients are
+estimated with the Hannan-Rissanen method (pure linear algebra), so fitting is
+deterministic and fast. The trade-off is that the estimates are approximate:
+they will not match a maximum-likelihood library (statsmodels / pmdarima)
+exactly. An optional conditional-sum-of-squares refinement step
+(`WithCSSRefinement`) tightens the coefficients toward an MLE fit. See
+[Limitations](#limitations).
 
 **New to time series?** [`docs/arima.md`](docs/arima.md) explains ARIMA and every
 algorithm implemented here — in plain language with the key equations — for
@@ -71,6 +73,21 @@ if err := model.Fit(series); err != nil {
 forecast, err := model.Forecast(10)
 ```
 
+### CSS refinement
+
+By default `Fit` uses the Hannan-Rissanen estimate. Pass `WithCSSRefinement()` to
+refine the coefficients by minimizing the conditional sum of squares (a
+derivative-free Nelder-Mead search seeded from the Hannan-Rissanen fit). It moves
+the coefficients toward a maximum-likelihood fit and never makes the fit worse —
+a refined estimate is kept only if it is stationary, invertible, and has a lower
+CSS than the seed, otherwise the seed is used unchanged.
+
+```go
+err := model.Fit(series, goarima.WithCSSRefinement())
+// AutoARIMA accepts the same option and threads it through every candidate fit:
+model, err := goarima.AutoARIMA(series, 5, 2, 5, goarima.WithCSSRefinement())
+```
+
 ### Inspecting a fitted model
 
 ```go
@@ -121,8 +138,9 @@ absent.
 
 This is an approximate, non-seasonal implementation. In particular:
 
-- **Hannan-Rissanen is not MLE.** Coefficients are close to, but not identical
-  to, statsmodels/pmdarima.
+- **Estimation is not full MLE.** The default Hannan-Rissanen fit (and the
+  optional CSS refinement) are close to, but not identical to, statsmodels'
+  default CSS-MLE. Full maximum-likelihood (Kalman filter) is not implemented.
 - **Non-invertible/non-stationary fixed-order fits are rejected, not repaired.**
   `Fit` returns an error rather than estimating into the valid region, so some
   explicit `(p,d,q)` requests fail instead of producing a model.
