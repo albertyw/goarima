@@ -100,6 +100,21 @@ func TestAutoARIMAErrors(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestAutoARIMAWithCSSRefinement(t *testing.T) {
+	// AutoARIMA must accept and thread the refinement option through to its
+	// fits, still returning a usable, finite-forecasting model.
+	series := genARMA11(500, 0.5, 0.4, 2)
+	model, err := AutoARIMA(series, 3, 1, 3, WithCSSRefinement())
+	require.NoError(t, err)
+	require.NotNil(t, model)
+
+	forecast, err := model.Forecast(5)
+	require.NoError(t, err)
+	for _, f := range forecast {
+		assert.False(t, math.IsNaN(f) || math.IsInf(f, 0))
+	}
+}
+
 func TestAIC(t *testing.T) {
 	// Lower residual variance gives a lower (better) AIC.
 	assert.Less(t, aic(100, 0.5, 1, 0), aic(100, 1.0, 1, 0))

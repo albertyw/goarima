@@ -13,7 +13,11 @@ import (
 // that minimizes the Akaike Information Criterion (AIC); the (0,0) combination
 // is skipped. Candidate orders whose fit fails (e.g. too few observations) are
 // skipped.
-func AutoARIMA(series []float64, maxP, maxD, maxQ int) (*ARIMA, error) {
+//
+// Any FitOption (e.g. WithCSSRefinement) is threaded through to every candidate
+// fit and the final refit, so candidates are scored and the final model is fit
+// with the same options.
+func AutoARIMA(series []float64, maxP, maxD, maxQ int, opts ...FitOption) (*ARIMA, error) {
 	if maxP < 0 || maxD < 0 || maxQ < 0 {
 		return nil, errors.New("AutoARIMA: max orders must be non-negative")
 	}
@@ -35,7 +39,7 @@ func AutoARIMA(series []float64, maxP, maxD, maxQ int) (*ARIMA, error) {
 			if err != nil {
 				continue
 			}
-			if err := model.Fit(series); err != nil {
+			if err := model.Fit(series, opts...); err != nil {
 				continue
 			}
 			a := aic(n, model.sigma2, p, q)
@@ -54,7 +58,7 @@ func AutoARIMA(series []float64, maxP, maxD, maxQ int) (*ARIMA, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := best.Fit(series); err != nil {
+	if err := best.Fit(series, opts...); err != nil {
 		return nil, err
 	}
 	return best, nil

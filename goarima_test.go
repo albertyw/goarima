@@ -125,6 +125,33 @@ func TestGetters(t *testing.T) {
 	assert.GreaterOrEqual(t, model.Sigma2(), 0.0)
 }
 
+func TestFitWithCSSRefinementLowersResidualVariance(t *testing.T) {
+	// On real ARMA data, refining the HR estimate by CSS cannot increase the
+	// residual variance (it improves or falls back to the seed).
+	series := genARMA11(3000, 0.5, 0.4, 3)
+
+	plain, err := NewARIMA(1, 0, 1)
+	require.NoError(t, err)
+	require.NoError(t, plain.Fit(series))
+
+	refined, err := NewARIMA(1, 0, 1)
+	require.NoError(t, err)
+	require.NoError(t, refined.Fit(series, WithCSSRefinement()))
+
+	assert.LessOrEqual(t, refined.Sigma2(), plain.Sigma2())
+}
+
+func TestFitWithCSSRefinementRandomWalkNoop(t *testing.T) {
+	// ARIMA(0,1,0) has no coefficients to refine; the option must be a harmless
+	// no-op rather than an error.
+	series := []float64{1, 3, 2, 5, 4, 7, 6, 9, 8, 11}
+	model, err := NewARIMA(0, 1, 0)
+	require.NoError(t, err)
+	require.NoError(t, model.Fit(series, WithCSSRefinement()))
+	assert.Empty(t, model.Phi())
+	assert.Empty(t, model.Theta())
+}
+
 func TestARIMA(t *testing.T) {
 	data := []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	p, d, q := 1, 1, 1
