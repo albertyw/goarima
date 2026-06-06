@@ -83,15 +83,15 @@ func runAuto(name string, series []float64, horizon int) {
 }
 
 // runFixed fits an ARIMA model with explicit orders. These examples mirror the
-// statsmodels reference exactly so the two outputs can be compared. CSS
-// refinement is enabled to tighten the coefficients toward statsmodels' MLE fit.
+// statsmodels reference exactly so the two outputs can be compared. Exact MLE
+// refinement is enabled so the coefficients match statsmodels' statespace fit.
 func runFixed(name string, series []float64, p, d, q, horizon int) {
 	model, err := goarima.NewARIMA(p, d, q)
 	if err != nil {
 		fmt.Printf("[goarima] %s: %v\n", name, err)
 		return
 	}
-	if err := model.Fit(series, goarima.WithCSSRefinement()); err != nil {
+	if err := model.Fit(series, goarima.WithMLE()); err != nil {
 		fmt.Printf("[goarima] %s: %v\n", name, err)
 		return
 	}
