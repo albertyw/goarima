@@ -7,9 +7,10 @@ It fits and forecasts ARIMA(p, d, q) models. By default, coefficients are
 estimated with the Hannan-Rissanen method (pure linear algebra), so fitting is
 deterministic and fast. The trade-off is that the estimates are approximate:
 they will not match a maximum-likelihood library (statsmodels / pmdarima)
-exactly. An optional conditional-sum-of-squares refinement step
-(`WithCSSRefinement`) tightens the coefficients toward an MLE fit. See
-[Limitations](#limitations).
+exactly. Two optional refinement steps tighten the coefficients: a
+conditional-sum-of-squares search (`WithCSSRefinement`) and an exact Gaussian
+maximum-likelihood fit via the Kalman filter (`WithMLE`, matching statsmodels'
+`method="statespace"` default). See [Limitations](#limitations).
 
 **New to time series?** [`docs/arima.md`](docs/arima.md) explains ARIMA and every
 algorithm implemented here — in plain language with the key equations — for
@@ -73,19 +74,25 @@ if err := model.Fit(series); err != nil {
 forecast, err := model.Forecast(10)
 ```
 
-### CSS refinement
+### Coefficient refinement
 
-By default `Fit` uses the Hannan-Rissanen estimate. Pass `WithCSSRefinement()` to
-refine the coefficients by minimizing the conditional sum of squares (a
-derivative-free Nelder-Mead search seeded from the Hannan-Rissanen fit). It moves
-the coefficients toward a maximum-likelihood fit and never makes the fit worse —
-a refined estimate is kept only if it is stationary, invertible, and has a lower
-CSS than the seed, otherwise the seed is used unchanged.
+By default `Fit` uses the Hannan-Rissanen estimate. Two opt-in options refine it
+with a derivative-free Nelder-Mead search seeded from the Hannan-Rissanen fit:
+
+- `WithCSSRefinement()` minimizes the conditional sum of squares (a least-squares
+  fit).
+- `WithMLE()` minimizes the exact Gaussian negative log-likelihood computed with
+  a Kalman filter, matching statsmodels' `method="statespace"` default.
+
+Both move the coefficients toward a maximum-likelihood fit and never make the fit
+worse — a refined estimate is kept only if it is stationary, invertible, and
+strictly improves on the seed, otherwise the seed is used unchanged. If both
+options are supplied, `WithMLE` takes precedence.
 
 ```go
-err := model.Fit(series, goarima.WithCSSRefinement())
-// AutoARIMA accepts the same option and threads it through every candidate fit:
-model, err := goarima.AutoARIMA(series, 5, 2, 5, goarima.WithCSSRefinement())
+err := model.Fit(series, goarima.WithMLE())
+// AutoARIMA accepts the same options and threads them through every candidate fit:
+model, err := goarima.AutoARIMA(series, 5, 2, 5, goarima.WithMLE())
 ```
 
 ### Inspecting a fitted model
@@ -138,9 +145,10 @@ absent.
 
 This is an approximate, non-seasonal implementation. In particular:
 
-- **Estimation is not full MLE.** The default Hannan-Rissanen fit (and the
-  optional CSS refinement) are close to, but not identical to, statsmodels'
-  default CSS-MLE. Full maximum-likelihood (Kalman filter) is not implemented.
+- **Approximate by default.** The default Hannan-Rissanen fit is close to, but
+  not identical to, statsmodels' default. The optional `WithMLE` refinement adds
+  an exact Gaussian maximum-likelihood fit (Kalman filter), though small numeric
+  differences from statsmodels remain.
 - **Non-invertible/non-stationary fixed-order fits are rejected, not repaired.**
   `Fit` returns an error rather than estimating into the valid region, so some
   explicit `(p,d,q)` requests fail instead of producing a model.
