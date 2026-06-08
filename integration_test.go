@@ -1,4 +1,4 @@
-package goarima
+package goarima_test
 
 import (
 	"bufio"
@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/albertyw/goarima"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -44,7 +45,7 @@ func TestAutoARIMAAirPassengers(t *testing.T) {
 	series := parseTestSeries(t, airPassengersCSV)
 	require.Len(t, series, 144)
 
-	model, err := AutoARIMA(series, 5, 2, 5)
+	model, err := goarima.AutoARIMA(series, 5, 2, 5)
 	require.NoError(t, err)
 
 	p, d, q := model.Orders()
@@ -67,7 +68,7 @@ func TestAutoARIMAAirPassengers(t *testing.T) {
 // previously made Forecast diverge to ~1e35. Fit must now reject it.
 func TestNonInvertibleAirPassengersRejected(t *testing.T) {
 	series := parseTestSeries(t, airPassengersCSV)
-	model, err := NewARIMA(2, 1, 1)
+	model, err := goarima.NewARIMA(2, 1, 1)
 	require.NoError(t, err)
 	assert.Error(t, model.Fit(series))
 }
@@ -78,7 +79,7 @@ func TestNonInvertibleAirPassengersRejected(t *testing.T) {
 // test, d stays at 0 or 1 and the forecast is finite.
 func TestAutoARIMASunspotsNotOverDifferenced(t *testing.T) {
 	series := parseTestSeries(t, sunspotsCSV)
-	model, err := AutoARIMA(series, 5, 2, 5)
+	model, err := goarima.AutoARIMA(series, 5, 2, 5)
 	require.NoError(t, err)
 
 	_, d, _ := model.Orders()
