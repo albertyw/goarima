@@ -1,5 +1,7 @@
 # goarima
 
+![Sunspots forecast comparison](docs/images/sunspots.png)
+
 A pure-Go implementation of ARIMA (AutoRegressive Integrated Moving Average)
 time-series modeling, with automatic order selection.
 
@@ -154,7 +156,7 @@ wineind's near-unit-root (3,1,3) the amplitudes can still differ).
 
 | Sunspots — goarima AutoARIMA vs pmdarima | AirPassengers — goarima AutoARIMA vs pmdarima |
 |---|---|
-| ![Sunspots forecast comparison](docs/images/sunspots.png) | ![AirPassengers forecast comparison](docs/images/airpassengers.png) |
+| ![Wool Production forecast comparison](docs/images/woolyrnq.png) | ![AirPassengers forecast comparison](docs/images/airpassengers.png) |
 
 ## Limitations
 
