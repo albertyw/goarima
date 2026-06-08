@@ -178,6 +178,54 @@ const (
 	fixedForecastRelTol = 0.05
 )
 
+// absInt returns the absolute value of an int.
+func absInt(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+// TestAutoSelectionVsPmdarima is Tier 1b: goarima's AutoARIMA order selection,
+// checked against pmdarima.auto_arima — the only external auto-selection
+// reference, since statsmodels has none. The selection heuristics differ
+// (goarima does an exhaustive grid with a residual-variance AIC, pmdarima a
+// stepwise search with AICc), so p and q are NOT required to match. What must
+// agree is the differencing order d (both choose it with a KPSS test, so they
+// land within one level) and that goarima returns a usable, finite-forecasting
+// model within the requested bounds. Numeric agreement at a fixed order is
+// covered separately by TestFixedOrdersMatchPmdarima.
+func TestAutoSelectionVsPmdarima(t *testing.T) {
+	ref := loadReference(t)
+	series := referenceSeries(t)
+	for name, auto := range ref.Auto {
+		t.Run(name, func(t *testing.T) {
+			s := series[name]
+			require.NotNilf(t, s, "no series for %s", name)
+			maxP, maxD, maxQ := auto.Max[0], auto.Max[1], auto.Max[2]
+
+			model, err := goarima.AutoARIMA(s, maxP, maxD, maxQ)
+			require.NoError(t, err)
+
+			p, d, q := model.Orders()
+			refD := auto.Order[1]
+			assert.LessOrEqualf(t, absInt(d-refD), 1, "d=%d vs pmdarima d=%d", d, refD)
+			assert.GreaterOrEqual(t, p, 0)
+			assert.LessOrEqual(t, p, maxP)
+			assert.GreaterOrEqual(t, q, 0)
+			assert.LessOrEqual(t, q, maxQ)
+			assert.Truef(t, p > 0 || q > 0, "(0,0) must never be selected") // matches AutoARIMA
+
+			forecast, err := model.Forecast(auto.Horizon)
+			require.NoError(t, err)
+			require.Len(t, forecast, auto.Horizon)
+			for _, f := range forecast {
+				assert.False(t, math.IsNaN(f) || math.IsInf(f, 0))
+			}
+		})
+	}
+}
+
 // TestAutoARIMAAirPassengers exercises the full pipeline on a real, trending
 // dataset. The exact orders depend on the (intentionally simple) heuristics, so
 // the assertions check that the model is sensible rather than matching a
