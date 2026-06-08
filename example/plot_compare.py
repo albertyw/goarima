@@ -3,8 +3,10 @@
 Reads the committed reference fixtures (so no model fitting happens here) and the
 example datasets, then plots each series' recent history with the goarima and
 pmdarima forecasts continuing from it. One PNG per dataset is written under
-docs/images/. For the d>=1 datasets the two forecast lines visibly separate,
-showing the drift-estimation gap the integration tests document.
+example/charts/, which is gitignored; the committed documentation copies linked
+from the README live under docs/images/ (refresh them by copying from here). For
+the d>=1 datasets the two forecast lines visibly separate, showing the
+drift-estimation gap the integration tests document.
 
 Run:
     env/bin/python plot_compare.py
@@ -21,7 +23,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DATA_DIR = os.path.join(HERE, "data")
 TESTDATA = os.path.join(ROOT, "testdata")
-OUT_DIR = os.path.join(ROOT, "docs", "images")
+OUT_DIR = os.path.join(HERE, "charts")  # gitignored; committed copies in docs/images/
 
 HISTORY_TAIL = 48  # number of trailing history points to draw
 

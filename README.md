@@ -144,10 +144,11 @@ absent.
 ### Trend comparison
 
 `make charts` renders goarima's exact-MLE forecast against
-[pmdarima](https://alkaline-ml.com/pmdarima/)'s at the same fixed orders, one
-chart per dataset under [`docs/images/`](docs/images). For stationary (`d=0`)
-fits the two forecasts overlap; for differenced (`d≥1`) fits they can separate
-slightly because goarima and pmdarima estimate the drift differently.
+[pmdarima](https://alkaline-ml.com/pmdarima/)'s at the same fixed orders, writing
+one chart per dataset to the gitignored `example/charts/`. Committed reference
+copies live under [`docs/images/`](docs/images) (shown below). For stationary
+(`d=0`) fits the two forecasts overlap; for differenced (`d≥1`) fits they can
+separate slightly because goarima and pmdarima estimate the drift differently.
 
 | Sunspots — ARIMA(2,0,1), forecasts overlap | AirPassengers — ARIMA(0,1,1), with drift |
 |---|---|
@@ -174,7 +175,7 @@ make test      # unit tests, vet, gofmt, go mod tidy, golangci-lint, govulncheck
 make race      # race detector
 make cover     # coverage report
 make benchmark # benchmarks
-make charts    # regenerate the trend-comparison charts (needs example/env)
+make charts    # trend-comparison charts -> example/charts/ (gitignored; needs example/env)
 ```
 
 ### Integration tests
