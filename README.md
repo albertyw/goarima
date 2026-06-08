@@ -147,9 +147,10 @@ goarima-only demo if that environment is absent.
 `make charts` renders goarima's AutoARIMA forecast against
 [pmdarima](https://alkaline-ml.com/pmdarima/)'s at the same goarima-selected
 order, writing one chart per dataset to the gitignored `example/charts/`.
-Committed copies live under [`docs/images/`](docs/images) (two shown below). The
-AR terms goarima picks let the forecasts follow each series' cyclic shape, and
-pmdarima's matching drift handling keeps the two lines close.
+Committed copies live under [`docs/images/`](docs/images) (two shown below). Both
+sides are exact-MLE fits, so the AR terms goarima picks let the two forecasts
+follow each series' cyclic shape together (for over-parameterized orders such as
+wineind's near-unit-root (3,1,3) the amplitudes can still differ).
 
 | Sunspots — goarima AutoARIMA vs pmdarima | AirPassengers — goarima AutoARIMA vs pmdarima |
 |---|---|

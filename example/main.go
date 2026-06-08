@@ -62,14 +62,23 @@ func report(label, name string, model *goarima.ARIMA, horizon int) {
 	fmt.Printf("  forecast: %.4f\n\n", forecast)
 }
 
-// runAuto fits an automatically-selected ARIMA model and reports it. compare.py
-// parses each block and fits the reference (pmdarima) at the same goarima-chosen
-// order for a side-by-side comparison.
+// runAuto selects the orders with AutoARIMA, then refits at those orders with
+// exact MLE so the reported coefficients are maximum-likelihood — matching how
+// pmdarima fits in compare.py. Without this the report would show the
+// approximate Hannan-Rissanen seed, which diverges sharply from an MLE fit for
+// hard, weakly-identified orders. Order selection stays on the fast HR path;
+// only the single chosen order is MLE-refined, so the demo stays quick.
 func runAuto(name string, series []float64, horizon int) {
 	model, err := goarima.AutoARIMA(series, 5, 2, 5)
 	if err != nil {
 		fmt.Printf("[goarima] %s: %v\n", name, err)
 		return
+	}
+	p, d, q := model.Orders()
+	if refined, rerr := goarima.NewARIMA(p, d, q); rerr == nil {
+		if ferr := refined.Fit(series, goarima.WithMLE()); ferr == nil {
+			model = refined // keep the HR fit if MLE refinement fails
+		}
 	}
 	report("goarima", name, model, horizon)
 }
