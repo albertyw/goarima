@@ -141,6 +141,18 @@ the Python environment described in `example/pyproject.toml` (installed under
 `example/env`) and falls back to the goarima-only demo if that environment is
 absent.
 
+### Trend comparison
+
+`make charts` renders goarima's exact-MLE forecast against
+[pmdarima](https://alkaline-ml.com/pmdarima/)'s at the same fixed orders, one
+chart per dataset under [`docs/images/`](docs/images). For stationary (`d=0`)
+fits the two forecasts overlap; for differenced (`d≥1`) fits they can separate
+slightly because goarima and pmdarima estimate the drift differently.
+
+| Sunspots — ARIMA(2,0,1), forecasts overlap | AirPassengers — ARIMA(0,1,1), with drift |
+|---|---|
+| ![Sunspots forecast comparison](docs/images/sunspots.png) | ![AirPassengers forecast comparison](docs/images/airpassengers.png) |
+
 ## Limitations
 
 This is an approximate, non-seasonal implementation. In particular:
