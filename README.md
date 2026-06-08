@@ -174,6 +174,21 @@ make test      # unit tests, vet, gofmt, go mod tidy, golangci-lint, govulncheck
 make race      # race detector
 make cover     # coverage report
 make benchmark # benchmarks
+make charts    # regenerate the trend-comparison charts (needs example/env)
+```
+
+### Integration tests
+
+`integration_test.go` (in the external `goarima_test` package, so it uses only
+the exported API) compares goarima against committed reference fixtures — no
+network or Python at test time. It checks fixed-order fits and `auto_arima`
+selection against [pmdarima](https://alkaline-ml.com/pmdarima/), analytic
+closed-forms, and a goarima golden baseline. Regenerate the fixtures (needs the
+`example/env` venv) when goarima's numerics intentionally change:
+
+```sh
+cd example && env/bin/python gen_reference.py   # pmdarima reference fixtures
+go test -run TestGoldenWithMLE -update          # goarima golden baseline
 ```
 
 ## License
