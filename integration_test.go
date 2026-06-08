@@ -186,6 +186,68 @@ func absInt(x int) int {
 	return x
 }
 
+// --- Tier 2: analytic closed-forms (public API, no reference library) ---
+
+// TestAnalyticRampForecast: ARIMA(1,1,1) on a perfect linear ramp forecasts the
+// exact continuation 11..15 — a closed-form result independent of any library.
+func TestAnalyticRampForecast(t *testing.T) {
+	series := []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	model, err := goarima.NewARIMA(1, 1, 1)
+	require.NoError(t, err)
+	require.NoError(t, model.Fit(series))
+
+	forecast, err := model.Forecast(5)
+	require.NoError(t, err)
+	want := []float64{11, 12, 13, 14, 15}
+	for i := range want {
+		assert.InDeltaf(t, want[i], forecast[i], 1e-6, "forecast[%d]", i)
+	}
+}
+
+// TestAnalyticRandomWalkDrift: ARIMA(0,1,0) extrapolates the mean first
+// difference, a pure random-walk-with-drift forecast with a closed form.
+func TestAnalyticRandomWalkDrift(t *testing.T) {
+	series := []float64{1, 3, 2, 5, 4, 7, 6, 9, 8, 11}
+	model, err := goarima.NewARIMA(0, 1, 0)
+	require.NoError(t, err)
+	require.NoError(t, model.Fit(series))
+
+	forecast, err := model.Forecast(3)
+	require.NoError(t, err)
+	drift := (11.0 - 1.0) / 9.0 // mean of the first differences
+	assert.InDelta(t, 11+drift, forecast[0], 1e-9)
+	assert.InDelta(t, 11+2*drift, forecast[1], 1e-9)
+	assert.InDelta(t, 11+3*drift, forecast[2], 1e-9)
+}
+
+// TestAnalyticAR1DampedDecay: a stationary AR(1) fit to perfectly oscillating
+// data (phi≈-0.9, mean 1.5) decays toward the mean in a known damped pattern.
+func TestAnalyticAR1DampedDecay(t *testing.T) {
+	series := []float64{1, 2, 1, 2, 1, 2, 1, 2, 1, 2}
+	model, err := goarima.NewARIMA(1, 0, 0)
+	require.NoError(t, err)
+	require.NoError(t, model.Fit(series))
+
+	forecast, err := model.Forecast(5)
+	require.NoError(t, err)
+	want := []float64{1.05, 1.905, 1.1355, 1.82805, 1.204755}
+	for i := range want {
+		assert.InDeltaf(t, want[i], forecast[i], 1e-6, "forecast[%d]", i)
+	}
+}
+
+// TestDifferenceUndifferenceRoundTrip: Undifference inverts Difference through
+// the public API — Undifference(Difference(orig,1), orig[0]) == orig[1:].
+func TestDifferenceUndifferenceRoundTrip(t *testing.T) {
+	orig := []float64{5, 7, 6, 10, 9, 12}
+	diffed := goarima.Difference(orig, 1)
+	recon := goarima.Undifference(diffed, orig[0])
+	require.Len(t, recon, len(orig)-1)
+	for i := range recon {
+		assert.InDeltaf(t, orig[i+1], recon[i], 1e-9, "recon[%d]", i)
+	}
+}
+
 // TestAutoSelectionVsPmdarima is Tier 1b: goarima's AutoARIMA order selection,
 // checked against pmdarima.auto_arima — the only external auto-selection
 // reference, since statsmodels has none. The selection heuristics differ
