@@ -150,7 +150,7 @@ copies live under [`docs/images/`](docs/images) (shown below). For stationary
 (`d=0`) fits the two forecasts overlap; for differenced (`d≥1`) fits they can
 separate slightly because goarima and pmdarima estimate the drift differently.
 
-| Sunspots — ARIMA(2,0,1), forecasts overlap | AirPassengers — ARIMA(0,1,1), with drift |
+| Sunspots — ARIMA(2,0,1), forecasts overlap | AirPassengers — ARIMA(1,1,0), AR(1) curving toward drift |
 |---|---|
 | ![Sunspots forecast comparison](docs/images/sunspots.png) | ![AirPassengers forecast comparison](docs/images/airpassengers.png) |
 

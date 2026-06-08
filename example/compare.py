@@ -44,7 +44,7 @@ def fmt(values) -> str:
 # Fixed-order examples, mirroring runFixed(...) in main.go exactly.
 FIXED = [
     ("Oscillating", oscillating(100), (1, 0, 0), 6),
-    ("AirPassengers", load("airpassengers.csv"), (0, 1, 1), 12),
+    ("AirPassengers", load("airpassengers.csv"), (1, 1, 0), 12),
     ("Lynx", load("lynx.csv"), (1, 0, 1), 10),
     ("WineInd", load("wineind.csv"), (2, 0, 1), 12),
     ("WoolyRnq", load("woolyrnq.csv"), (0, 1, 1), 8),
