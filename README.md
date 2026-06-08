@@ -126,31 +126,32 @@ equations and links for further reading, see [`docs/arima.md`](docs/arima.md).
 
 ## Examples
 
-The [`example/`](example/) directory contains a runnable demo that fits both
-`AutoARIMA` and fixed-order models to several classic datasets (AirPassengers,
-Lynx, wine sales, sunspots, wool production, and Australian population):
+The [`example/`](example/) directory contains a runnable demo that runs
+`AutoARIMA` on several classic datasets (AirPassengers, Lynx, wine sales,
+sunspots, wool production, and Australian population) and prints the selected
+orders, coefficients, and forecasts:
 
 ```sh
 cd example && go run .
 ```
 
-`make example` runs `example/compare.py`, which fits the same fixed-order
-models with [statsmodels](https://www.statsmodels.org/) and prints the goarima
-and statsmodels results interleaved per dataset for easy comparison. It requires
-the Python environment described in `example/pyproject.toml` (installed under
-`example/env`) and falls back to the goarima-only demo if that environment is
-absent.
+`make example` runs `example/compare.py`, which fits
+[pmdarima](https://alkaline-ml.com/pmdarima/) at the **orders goarima's
+AutoARIMA selected** for each dataset and prints the two results interleaved for
+easy comparison. It requires the Python environment described in
+`example/pyproject.toml` (installed under `example/env`) and falls back to the
+goarima-only demo if that environment is absent.
 
 ### Trend comparison
 
-`make charts` renders goarima's exact-MLE forecast against
-[pmdarima](https://alkaline-ml.com/pmdarima/)'s at the same fixed orders, writing
-one chart per dataset to the gitignored `example/charts/`. Committed reference
-copies live under [`docs/images/`](docs/images) (shown below). For stationary
-(`d=0`) fits the two forecasts overlap; for differenced (`d≥1`) fits they can
-separate slightly because goarima and pmdarima estimate the drift differently.
+`make charts` renders goarima's AutoARIMA forecast against
+[pmdarima](https://alkaline-ml.com/pmdarima/)'s at the same goarima-selected
+order, writing one chart per dataset to the gitignored `example/charts/`.
+Committed copies live under [`docs/images/`](docs/images) (two shown below). The
+AR terms goarima picks let the forecasts follow each series' cyclic shape, and
+pmdarima's matching drift handling keeps the two lines close.
 
-| Sunspots — ARIMA(2,0,1), forecasts overlap | AirPassengers — ARIMA(1,1,0), AR(1) curving toward drift |
+| Sunspots — goarima AutoARIMA vs pmdarima | AirPassengers — goarima AutoARIMA vs pmdarima |
 |---|---|
 | ![Sunspots forecast comparison](docs/images/sunspots.png) | ![AirPassengers forecast comparison](docs/images/airpassengers.png) |
 

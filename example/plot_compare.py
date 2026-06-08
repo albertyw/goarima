@@ -1,59 +1,37 @@
-"""Render trend-comparison charts: goarima vs pmdarima fixed-order forecasts.
+"""Render trend-comparison charts: goarima AutoARIMA vs pmdarima.
 
-Reads the committed reference fixtures (so no model fitting happens here) and the
-example datasets, then plots each series' recent history with the goarima and
-pmdarima forecasts continuing from it. One PNG per dataset is written under
-example/charts/, which is gitignored; the committed documentation copies linked
-from the README live under docs/images/ (refresh them by copying from here). For
-the d>=1 datasets the two forecast lines visibly separate, showing the
-drift-estimation gap the integration tests document.
+Runs the Go demo, reads the order goarima's AutoARIMA selected for each dataset,
+fits pmdarima at that same order, and plots each series' recent history with both
+forecasts continuing from it. The helpers come from compare.py, so the charts use
+exactly the orders and fits the text comparison does.
+
+One PNG per dataset is written under example/charts/, which is gitignored; the
+committed documentation copies linked from the README live under docs/images/
+(refresh them by copying from here).
 
 Run:
     env/bin/python plot_compare.py
 """
 
-import json
 import os
 
 os.environ.setdefault("MPLBACKEND", "Agg")  # headless rendering, no display needed
 
 import matplotlib.pyplot as plt  # noqa: E402  (after MPLBACKEND is set)
 
+from compare import (  # noqa: E402  (after MPLBACKEND is set)
+    DATASETS,
+    load,
+    parse_blocks,
+    pmdarima_fit,
+    run_goarima,
+)
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-DATA_DIR = os.path.join(HERE, "data")
-TESTDATA = os.path.join(ROOT, "testdata")
 OUT_DIR = os.path.join(HERE, "charts")  # gitignored; committed copies in docs/images/
 
 HISTORY_TAIL = 48  # number of trailing history points to draw
-
-
-def load_series(name: str) -> list[float]:
-    """Read a newline-separated CSV of numbers into a list of floats."""
-    with open(os.path.join(DATA_DIR, name)) as handle:
-        return [float(line.strip()) for line in handle if line.strip()]
-
-
-def oscillating(n: int) -> list[float]:
-    """Return n repetitions of the values 1, 2."""
-    return [1.0, 2.0] * n
-
-
-SERIES = {
-    "Oscillating": oscillating(100),
-    "AirPassengers": load_series("airpassengers.csv"),
-    "Lynx": load_series("lynx.csv"),
-    "WineInd": load_series("wineind.csv"),
-    "WoolyRnq": load_series("woolyrnq.csv"),
-    "AustRes": load_series("austres.csv"),
-    "Sunspots": load_series("sunspots.csv"),
-}
-
-
-def load_json(name: str) -> dict:
-    """Read a committed reference fixture from testdata/."""
-    with open(os.path.join(TESTDATA, name)) as handle:
-        return json.load(handle)
 
 
 def plot(name, series, order, goarima_fc, pmdarima_fc) -> str:
@@ -67,7 +45,7 @@ def plot(name, series, order, goarima_fc, pmdarima_fc) -> str:
     fig, ax = plt.subplots(figsize=(9, 4.5))
     ax.plot(hist_x, history, color="0.4", label="history")
     ax.plot(join_x, [history[-1]] + list(goarima_fc),
-            color="C0", marker="o", ms=3, label="goarima (MLE)")
+            color="C0", marker="o", ms=3, label="goarima (auto)")
     ax.plot(join_x, [history[-1]] + list(pmdarima_fc),
             color="C1", marker="x", ms=4, label="pmdarima")
     p, d, q = order
@@ -86,11 +64,16 @@ def plot(name, series, order, goarima_fc, pmdarima_fc) -> str:
 
 def main() -> None:
     os.makedirs(OUT_DIR, exist_ok=True)
-    goarima = load_json("goarima_golden.json")["fits"]
-    pmdarima = load_json("pmdarima_reference.json")["fixed"]
-    for name, series in SERIES.items():
-        g = goarima[name]
-        out = plot(name, series, g["order"], g["forecast"], pmdarima[name]["forecast"])
+    blocks = parse_blocks(run_goarima())
+    for name, csv in DATASETS:
+        go = blocks.get(name)
+        if go is None or "forecast" not in go:
+            continue
+        series = load(csv)
+        order = go["order"]
+        horizon = len(go["forecast"])
+        sm = pmdarima_fit(series, order, horizon)
+        out = plot(name, series, order, go["forecast"], sm["forecast"])
         print(f"wrote {os.path.relpath(out, ROOT)}")
 
 
