@@ -4,7 +4,9 @@ import (
 	"bufio"
 	_ "embed"
 	"encoding/json"
+	"flag"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -13,6 +15,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// updateGolden, set by `go test -update`, rewrites the golden fixture instead of
+// asserting against it. Normal test runs never write files.
+var updateGolden = flag.Bool("update", false, "rewrite the goarima golden fixture")
 
 //go:embed example/data/airpassengers.csv
 var airPassengersCSV string
@@ -34,6 +40,9 @@ var austresCSV string
 
 //go:embed testdata/pmdarima_reference.json
 var pmdarimaReferenceJSON []byte
+
+//go:embed testdata/goarima_golden.json
+var goarimaGoldenJSON []byte
 
 func parseTestSeries(t *testing.T, csv string) []float64 {
 	t.Helper()
@@ -350,4 +359,105 @@ func TestAutoARIMASunspotsNotOverDifferenced(t *testing.T) {
 		}
 	}
 	assert.Positive(t, max)
+}
+
+// --- Tier 3: goarima golden baseline (regression guard) ---
+
+// goldenFit is one fitted goarima model captured in the golden fixture.
+type goldenFit struct {
+	Order    []int     `json:"order"`
+	Horizon  int       `json:"horizon"`
+	Phi      []float64 `json:"phi"`
+	Theta    []float64 `json:"theta"`
+	Forecast []float64 `json:"forecast"`
+	Sigma2   float64   `json:"sigma2"`
+}
+
+// goldenFixture is the whole committed goarima_golden.json document.
+type goldenFixture struct {
+	Meta map[string]string    `json:"_meta"`
+	Fits map[string]goldenFit `json:"fits"`
+}
+
+const goldenPath = "testdata/goarima_golden.json"
+
+// Golden tolerances. goarima's WithMLE fit is deterministic (linear-algebra HR
+// seed + deterministic Nelder-Mead), so these only absorb cross-platform
+// floating-point drift; a real numeric regression moves values far more.
+const (
+	goldenCoeffTol = 1e-6 // absolute (coefficients are O(1))
+	goldenRelTol   = 1e-6 // relative (forecasts/sigma2 span many magnitudes)
+)
+
+// fitGoldenWithMLE fits a model with exact MLE and returns it with its forecast.
+func fitGoldenWithMLE(t *testing.T, s []float64, order []int, horizon int) (*goarima.ARIMA, []float64) {
+	t.Helper()
+	model, err := goarima.NewARIMA(order[0], order[1], order[2])
+	require.NoError(t, err)
+	require.NoError(t, model.Fit(s, goarima.WithMLE()))
+	forecast, err := model.Forecast(horizon)
+	require.NoError(t, err)
+	return model, forecast
+}
+
+// TestGoldenWithMLE is Tier 3: goarima's own exact-MLE output is pinned to a
+// committed baseline so any numeric change is caught — including the d>=1
+// forecasts that the pmdarima comparison cannot check (the drift gap). The fixed
+// orders and horizons come from the pmdarima fixture, keeping a single source of
+// truth. Regenerate with: go test -run TestGoldenWithMLE -update
+func TestGoldenWithMLE(t *testing.T) {
+	ref := loadReference(t)
+	series := referenceSeries(t)
+
+	if *updateGolden {
+		writeGolden(t, ref, series)
+		return
+	}
+
+	var golden goldenFixture
+	require.NoError(t, json.Unmarshal(goarimaGoldenJSON, &golden))
+
+	for name, fix := range ref.Fixed {
+		t.Run(name, func(t *testing.T) {
+			want, ok := golden.Fits[name]
+			require.Truef(t, ok, "no golden entry for %s (run with -update)", name)
+
+			model, forecast := fitGoldenWithMLE(t, series[name], fix.Order, fix.Horizon)
+			assertCoeffsClose(t, "phi", want.Phi, model.Phi(), goldenCoeffTol)
+			assertCoeffsClose(t, "theta", want.Theta, model.Theta(), goldenCoeffTol)
+			assertForecastClose(t, want.Forecast, forecast, goldenRelTol)
+
+			scale := math.Abs(want.Sigma2)
+			if scale < 1 {
+				scale = 1
+			}
+			assert.InDelta(t, want.Sigma2, model.Sigma2(), goldenRelTol*scale)
+		})
+	}
+}
+
+// writeGolden refits every fixed case and rewrites the golden fixture. Only
+// reached under -update, so normal `go test` runs never touch the filesystem.
+func writeGolden(t *testing.T, ref refFixture, series map[string][]float64) {
+	t.Helper()
+	fits := make(map[string]goldenFit, len(ref.Fixed))
+	for name, fix := range ref.Fixed {
+		model, forecast := fitGoldenWithMLE(t, series[name], fix.Order, fix.Horizon)
+		fits[name] = goldenFit{
+			Order:    fix.Order,
+			Horizon:  fix.Horizon,
+			Phi:      model.Phi(),
+			Theta:    model.Theta(),
+			Forecast: forecast,
+			Sigma2:   model.Sigma2(),
+		}
+	}
+	out := goldenFixture{
+		Meta: map[string]string{"generator": "go test -run TestGoldenWithMLE -update"},
+		Fits: fits,
+	}
+	data, err := json.MarshalIndent(out, "", "  ")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(goldenPath, append(data, '\n'), 0o600))
+	t.Logf("wrote %s (%d fits)", goldenPath, len(fits))
 }
