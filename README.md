@@ -1,5 +1,7 @@
 # goarima
 
+![Sunspots forecast comparison](docs/images/sunspots.png)
+
 A pure-Go implementation of ARIMA (AutoRegressive Integrated Moving Average)
 time-series modeling, with automatic order selection.
 
@@ -126,20 +128,35 @@ equations and links for further reading, see [`docs/arima.md`](docs/arima.md).
 
 ## Examples
 
-The [`example/`](example/) directory contains a runnable demo that fits both
-`AutoARIMA` and fixed-order models to several classic datasets (AirPassengers,
-Lynx, wine sales, sunspots, wool production, and Australian population):
+The [`example/`](example/) directory contains a runnable demo that runs
+`AutoARIMA` on several classic datasets (AirPassengers, Lynx, wine sales,
+sunspots, wool production, and Australian population) and prints the selected
+orders, coefficients, and forecasts:
 
 ```sh
 cd example && go run .
 ```
 
-`make example` runs `example/compare.py`, which fits the same fixed-order
-models with [statsmodels](https://www.statsmodels.org/) and prints the goarima
-and statsmodels results interleaved per dataset for easy comparison. It requires
-the Python environment described in `example/pyproject.toml` (installed under
-`example/env`) and falls back to the goarima-only demo if that environment is
-absent.
+`make example` runs `example/compare.py`, which fits
+[pmdarima](https://alkaline-ml.com/pmdarima/) at the **orders goarima's
+AutoARIMA selected** for each dataset and prints the two results interleaved for
+easy comparison. It requires the Python environment described in
+`example/pyproject.toml` (installed under `example/env`) and falls back to the
+goarima-only demo if that environment is absent.
+
+### Trend comparison
+
+`make charts` renders goarima's AutoARIMA forecast against
+[pmdarima](https://alkaline-ml.com/pmdarima/)'s at the same goarima-selected
+order, writing one chart per dataset to the gitignored `example/charts/`.
+Committed copies live under [`docs/images/`](docs/images) (two shown below). Both
+sides are exact-MLE fits, so the AR terms goarima picks let the two forecasts
+follow each series' cyclic shape together (for over-parameterized orders such as
+wineind's near-unit-root (3,1,3) the amplitudes can still differ).
+
+| Sunspots — goarima AutoARIMA vs pmdarima | AirPassengers — goarima AutoARIMA vs pmdarima |
+|---|---|
+| ![Wool Production forecast comparison](docs/images/woolyrnq.png) | ![AirPassengers forecast comparison](docs/images/airpassengers.png) |
 
 ## Limitations
 
@@ -162,6 +179,21 @@ make test      # unit tests, vet, gofmt, go mod tidy, golangci-lint, govulncheck
 make race      # race detector
 make cover     # coverage report
 make benchmark # benchmarks
+make charts    # trend-comparison charts -> example/charts/ (gitignored; needs example/env)
+```
+
+### Integration tests
+
+`integration_test.go` (in the external `goarima_test` package, so it uses only
+the exported API) compares goarima against committed reference fixtures — no
+network or Python at test time. It checks fixed-order fits and `auto_arima`
+selection against [pmdarima](https://alkaline-ml.com/pmdarima/), analytic
+closed-forms, and a goarima golden baseline. Regenerate the fixtures (needs the
+`example/env` venv) when goarima's numerics intentionally change:
+
+```sh
+cd example && env/bin/python gen_reference.py   # pmdarima reference fixtures
+go test -run TestGoldenWithMLE -update          # goarima golden baseline
 ```
 
 ## License

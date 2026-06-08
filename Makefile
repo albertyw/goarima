@@ -41,6 +41,10 @@ benchmark:
 example:
 	cd example && if [ -x env/bin/python ]; then env/bin/python compare.py; else echo "no example/env; running goarima only (python3 -m venv env && env/bin/pip install -e . for the statsmodels comparison)" && go run .; fi
 
+.PHONY:charts
+charts:
+	cd example && if [ -x env/bin/python ]; then env/bin/python plot_compare.py; else echo "no example/env; install matplotlib in example/env to generate charts"; fi
+
 .PHONY:cpuprof
 cpuprof:
 	go tool pprof -top cpuprofile.out | head -n 20

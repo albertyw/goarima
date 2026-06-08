@@ -47,15 +47,6 @@ func parseSeries(csv string) ([]float64, error) {
 	return series, scanner.Err()
 }
 
-// oscillating returns n repetitions of the values 1, 2.
-func oscillating(n int) []float64 {
-	s := make([]float64, 0, 2*n)
-	for i := 0; i < n; i++ {
-		s = append(s, 1.0, 2.0)
-	}
-	return s
-}
-
 // report prints a model's orders, coefficients, and forecast in a layout that
 // mirrors the statsmodels reference script for easy side-by-side comparison.
 func report(label, name string, model *goarima.ARIMA, horizon int) {
@@ -71,29 +62,23 @@ func report(label, name string, model *goarima.ARIMA, horizon int) {
 	fmt.Printf("  forecast: %.4f\n\n", forecast)
 }
 
-// runAuto fits an automatically-selected ARIMA model (end-to-end demonstration;
-// statsmodels has no auto_arima equivalent, so this side has no Python mirror).
+// runAuto selects the orders with AutoARIMA, then refits at those orders with
+// exact MLE so the reported coefficients are maximum-likelihood — matching how
+// pmdarima fits in compare.py. Without this the report would show the
+// approximate Hannan-Rissanen seed, which diverges sharply from an MLE fit for
+// hard, weakly-identified orders. Order selection stays on the fast HR path;
+// only the single chosen order is MLE-refined, so the demo stays quick.
 func runAuto(name string, series []float64, horizon int) {
 	model, err := goarima.AutoARIMA(series, 5, 2, 5)
 	if err != nil {
 		fmt.Printf("[goarima] %s: %v\n", name, err)
 		return
 	}
-	report("goarima", name, model, horizon)
-}
-
-// runFixed fits an ARIMA model with explicit orders. These examples mirror the
-// statsmodels reference exactly so the two outputs can be compared. Exact MLE
-// refinement is enabled so the coefficients match statsmodels' statespace fit.
-func runFixed(name string, series []float64, p, d, q, horizon int) {
-	model, err := goarima.NewARIMA(p, d, q)
-	if err != nil {
-		fmt.Printf("[goarima] %s: %v\n", name, err)
-		return
-	}
-	if err := model.Fit(series, goarima.WithMLE()); err != nil {
-		fmt.Printf("[goarima] %s: %v\n", name, err)
-		return
+	p, d, q := model.Orders()
+	if refined, rerr := goarima.NewARIMA(p, d, q); rerr == nil {
+		if ferr := refined.Fit(series, goarima.WithMLE()); ferr == nil {
+			model = refined // keep the HR fit if MLE refinement fails
+		}
 	}
 	report("goarima", name, model, horizon)
 }
@@ -116,7 +101,7 @@ func main() {
 	woolyrnq := mustParse("WoolyRnq", woolyrnqCSV)
 	austres := mustParse("AustRes", austresCSV)
 
-	fmt.Println("# Automatic order selection (goarima only)")
+	fmt.Println("# AutoARIMA order selection (goarima; compared against pmdarima via compare.py)")
 	fmt.Println()
 	runAuto("AirPassengers", airPassengers, 12)
 	runAuto("Lynx", lynx, 10)
@@ -124,14 +109,4 @@ func main() {
 	runAuto("Sunspots", sunspots, 10)
 	runAuto("WoolyRnq", woolyrnq, 8)
 	runAuto("AustRes", austres, 8)
-
-	fmt.Println("# Fixed orders (compared against statsmodels via compare.py)")
-	fmt.Println()
-	runFixed("Oscillating", oscillating(100), 1, 0, 0, 6) // pure AR
-	runFixed("AirPassengers", airPassengers, 0, 1, 1, 12) // differencing + MA
-	runFixed("Lynx", lynx, 1, 0, 1, 10)                   // ARMA(1,1)
-	runFixed("WineInd", wineind, 2, 0, 1, 12)             // ARMA(2,1)
-	runFixed("WoolyRnq", woolyrnq, 0, 1, 1, 8)            // differencing + MA
-	runFixed("AustRes", austres, 1, 1, 1, 8)              // I(1) ARMA(1,1)
-	runFixed("Sunspots", sunspots, 2, 0, 1, 10)           // cyclic AR(2) + MA
 }
