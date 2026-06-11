@@ -47,24 +47,32 @@ func (m *ARIMA) Orders() (int, int, int) {
 	return m.p, m.d, m.q
 }
 
-// Phi returns the AR coefficients of the model.
+// Phi returns a copy of the AR coefficients of the model.
 func (m *ARIMA) Phi() []float64 {
-	return m.phi
+	return copyFloats(m.phi)
 }
 
-// Theta returns the MA coefficients of the model.
+// Theta returns a copy of the MA coefficients of the model.
 func (m *ARIMA) Theta() []float64 {
-	return m.theta
+	return copyFloats(m.theta)
 }
 
-// LastY returns the last p differenced observations.
+// LastY returns a copy of the last p differenced observations.
 func (m *ARIMA) LastY() []float64 {
-	return m.lastY
+	return copyFloats(m.lastY)
 }
 
-// LastE returns the last q residuals.
+// LastE returns a copy of the last q residuals.
 func (m *ARIMA) LastE() []float64 {
-	return m.lastE
+	return copyFloats(m.lastE)
+}
+
+// copyFloats returns a copy of s, so getters never expose internal state to
+// caller mutation. An empty (or nil) slice yields an empty non-nil slice.
+func copyFloats(s []float64) []float64 {
+	out := make([]float64, len(s))
+	copy(out, s)
+	return out
 }
 
 // LastOrig returns the last original value (for undifferencing).
@@ -121,6 +129,9 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
 
 	if len(series) <= m.d+m.p {
 		return errors.New("series too short for the requested ARIMA model")
+	}
+	if err := validateFinite(series); err != nil {
+		return err
 	}
 
 	// Remember the last value of the original series (for later undifferencing)
@@ -251,6 +262,19 @@ func (m *ARIMA) forecastDiff(h int) ([]float64, error) {
 		}
 	}
 	return diffPred, nil
+}
+
+// validateFinite returns an error if the series contains a NaN or infinite
+// value. NaN compares false against every threshold, so without this guard a
+// non-finite series can slip past the constancy and stability checks and
+// produce a "successfully" fitted model that silently forecasts NaN.
+func validateFinite(series []float64) error {
+	for i, v := range series {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return fmt.Errorf("series contains a non-finite value at index %d", i)
+		}
+	}
+	return nil
 }
 
 // mean returns the arithmetic mean of s, or 0 for an empty slice.

@@ -100,6 +100,16 @@ func TestAutoARIMAErrors(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestAutoARIMARejectsNonFiniteInput(t *testing.T) {
+	// A NaN in the input makes every candidate fit degenerate (the series is
+	// misclassified as constant, sigma2 floors, and the grid "selects" a model
+	// that forecasts NaN). AutoARIMA must reject non-finite input up front.
+	series := genAR1(100, 0.3, 9)
+	series[50] = math.NaN()
+	_, err := AutoARIMA(series, 2, 1, 2)
+	assert.ErrorContains(t, err, "non-finite")
+}
+
 func TestAutoARIMAWithCSSRefinement(t *testing.T) {
 	// AutoARIMA must accept and thread the refinement option through to its
 	// fits, still returning a usable, finite-forecasting model.

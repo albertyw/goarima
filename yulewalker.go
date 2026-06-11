@@ -7,74 +7,40 @@ import (
 	"github.com/albertyw/gaussian"
 )
 
-// autocorrelationAtLag calculates the autocorrelation at a given lag for a given time series.
-// This function has been manually verified.
+// autocovarianceAtLag returns the biased sample autocovariance of the series
+// at the given lag,
 //
-// Args:
+//	γ̂_k = (1/n)·Σ_{t=1}^{n-k} (y_t − ȳ)(y_{t+k} − ȳ)
 //
-//	series: The time series data.
-//	lag: The lag at which to calculate the autocorrelation.
-//
-// Returns:
-//
-//	The autocorrelation at the specified lag. Returns 0 if the lag is greater than or equal to the length of the series.
-func autocorrelationAtLag(series []float64, lag int) float64 {
+// or 0 when the lag is at or beyond the series length. The biased (divide by
+// n, not n-k) estimator keeps the Toeplitz system positive definite, so the
+// Yule-Walker AR estimate is always stationary.
+func autocovarianceAtLag(series []float64, lag int) float64 {
 	n := len(series)
 	if lag >= n {
 		return 0
 	}
 
-	// Calculate mean
+	m := mean(series)
 	var sum float64
-	for _, v := range series {
-		sum += v
-	}
-	mean := sum / float64(n)
-
-	// Calculate numerator (covariance)
-	var numerator float64
 	for i := 0; i < n-lag; i++ {
-		numerator += (series[i] - mean) * (series[i+lag] - mean)
+		sum += (series[i] - m) * (series[i+lag] - m)
 	}
-
-	// Calculate denominator (variance)
-	var denominator float64
-	for _, x := range series {
-		denominator += (x - mean) * (x - mean)
-	}
-
-	// Calculate autocorrelation
-	return numerator / float64(n)
+	return sum / float64(n)
 }
 
-// buildAutocorrelationVector builds a vector of autocorrelations for a given time series up to a specified order.
-//
-// Args:
-//
-//	series: The time series data.
-//	order: The maximum order of the autocorrelation to calculate.
-//
-// Returns:
-//
-//	A slice of floats representing the autocorrelations from lag 0 to lag 'order'.
-func buildAutocorrelationVector(series []float64, order int) []float64 {
+// buildAutocovarianceVector returns the autocovariances [γ̂_0, γ̂_1, …, γ̂_order]
+// of the series.
+func buildAutocovarianceVector(series []float64, order int) []float64 {
 	rVec := make([]float64, order+1)
 	for k := 0; k <= order; k++ {
-		rVec[k] = autocorrelationAtLag(series, k)
+		rVec[k] = autocovarianceAtLag(series, k)
 	}
 	return rVec
 }
 
-// buildToeplitzMatrix builds a Toeplitz matrix from a given autocorrelation vector.
-// This function has been manually verified against scipy.linalg.toeplitz.
-//
-// Args:
-//
-//	rVec: The autocorrelation vector.
-//
-// Returns:
-//
-//	A 2D slice of floats representing the (n-1) x (n-1) Toeplitz matrix.
+// buildToeplitzMatrix builds the p×p Toeplitz matrix R of the Yule-Walker
+// system from the autocovariance vector rVec = [γ_0 … γ_p]: R[i][j] = γ_|i−j|.
 func buildToeplitzMatrix(rVec []float64) [][]float64 {
 	p := len(rVec) - 1 // number of AR coefficients
 	matrix := make([][]float64, p)
@@ -88,24 +54,16 @@ func buildToeplitzMatrix(rVec []float64) [][]float64 {
 	return matrix
 }
 
-// buildRHSVector builds the right-hand side vector for the Yule-Walker equations.
-//
-// Args:
-//
-//	rVec: The autocorrelation vector.
-//
-// Returns:
-//
-//	A slice of floats representing the right-hand side vector.
+// buildRHSVector builds the right-hand side [γ_1 … γ_p] of the Yule-Walker
+// equations from the autocovariance vector rVec = [γ_0 … γ_p].
 func buildRHSVector(rVec []float64) []float64 {
 	bVec := make([]float64, len(rVec)-1)
 	copy(bVec, rVec[1:])
 	return bVec
 }
 
-// solveYuleWalker applies the Yule‑Walker equations to the input series `y`
-// and returns the AR(p) coefficients and the white‑noise variance.
-// The series is assumed to be already differenced (i.e. stationary).
+// solveYuleWalker fits an AR(order) model to the series by solving the
+// Yule-Walker equations
 //
 //	R φ = r
 //
@@ -114,29 +72,15 @@ func buildRHSVector(rVec []float64) []float64 {
 //
 //	σ² = r0 – φᵀ r   (residual variance)
 //
-// Assumptions:
-//   - The input series 'series' is stationary.  This means its statistical properties
-//     (mean, variance, autocorrelation) do not change over time.  It is often
-//     necessary to difference the series before applying the Yule-Walker equations
-//     to achieve stationarity.
-//
-// Args:
-//
-//	series: The stationary time series data.
-//	order: The order (p) of the autoregressive model.
-//
-// Returns:
-//
-//	coeffs: The AR(p) coefficients.
-//	sigma2: The estimated white-noise variance (residual variance).
-//	error: An error if the input is invalid or the linear system cannot be solved.
+// and returns the AR coefficients and the white-noise variance σ². The series
+// must already be stationary (difference it first if necessary).
 func solveYuleWalker(series []float64, order int) ([]float64, float64, error) {
 	if order <= 0 || order >= len(series) {
 		return nil, 0, errors.New("solveYuleWalker: order must be >0 and <len(series)")
 	}
 
-	// Autocorrelation vector r[0 … order], then solve from it.
-	rVec := buildAutocorrelationVector(series, order)
+	// Autocovariance vector r[0 … order], then solve from it.
+	rVec := buildAutocovarianceVector(series, order)
 	return solveYuleWalkerFromAutocov(rVec, order)
 }
 

@@ -154,7 +154,7 @@ sides are exact-MLE fits, so the AR terms goarima picks let the two forecasts
 follow each series' cyclic shape together (for over-parameterized orders such as
 wineind's near-unit-root (3,1,3) the amplitudes can still differ).
 
-| Sunspots — goarima AutoARIMA vs pmdarima | AirPassengers — goarima AutoARIMA vs pmdarima |
+| Wool production (woolyrnq) — goarima AutoARIMA vs pmdarima | AirPassengers — goarima AutoARIMA vs pmdarima |
 |---|---|
 | ![Wool Production forecast comparison](docs/images/woolyrnq.png) | ![AirPassengers forecast comparison](docs/images/airpassengers.png) |
 

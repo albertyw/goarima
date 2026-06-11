@@ -96,6 +96,29 @@ func TestNewARIMAErrors(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestFitRejectsNonFiniteInput(t *testing.T) {
+	// NaN compares false against every threshold, so without an explicit guard a
+	// NaN-bearing series is misclassified as constant and "fits" successfully,
+	// silently forecasting NaN. Fit must reject non-finite input instead.
+	testCases := []struct {
+		name string
+		bad  float64
+	}{
+		{"NaN", math.NaN()},
+		{"+Inf", math.Inf(1)},
+		{"-Inf", math.Inf(-1)},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			series := []float64{1, 2, 1, 2, 1, 2, 1, 2, 1, 2}
+			series[3] = tc.bad
+			model, err := NewARIMA(1, 0, 0)
+			require.NoError(t, err)
+			assert.Error(t, model.Fit(series))
+		})
+	}
+}
+
 func TestFitTooShort(t *testing.T) {
 	model, err := NewARIMA(2, 1, 0)
 	require.NoError(t, err)
@@ -124,6 +147,32 @@ func TestGetters(t *testing.T) {
 	assert.Empty(t, model.LastE())
 	assert.Equal(t, 2.0, model.LastOrig())
 	assert.GreaterOrEqual(t, model.Sigma2(), 0.0)
+}
+
+func TestGettersReturnCopies(t *testing.T) {
+	// The slice getters must return copies: mutating a returned slice must not
+	// corrupt the model's state or change its forecasts.
+	series := genARMA11(500, 0.5, 0.4, 17)
+	model, err := NewARIMA(1, 0, 1)
+	require.NoError(t, err)
+	require.NoError(t, model.Fit(series))
+
+	before, err := model.Forecast(3)
+	require.NoError(t, err)
+
+	model.Phi()[0] = 99
+	model.Theta()[0] = 99
+	model.LastY()[0] = 99
+	model.LastE()[0] = 99
+
+	assert.NotEqual(t, 99.0, model.Phi()[0])
+	assert.NotEqual(t, 99.0, model.Theta()[0])
+	assert.NotEqual(t, 99.0, model.LastY()[0])
+	assert.NotEqual(t, 99.0, model.LastE()[0])
+
+	after, err := model.Forecast(3)
+	require.NoError(t, err)
+	assert.Equal(t, before, after)
 }
 
 func TestFitWithCSSRefinementLowersResidualVariance(t *testing.T) {
