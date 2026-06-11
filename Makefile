@@ -5,7 +5,7 @@ all: test
 
 .PHONY:clean
 clean:
-	rm memprofile.out cpuprofile.out goarima.test c.out || true
+	rm goarima.test c.out || true
 
 .PHONY:install-test-deps
 install-test-deps:
@@ -44,11 +44,3 @@ example:
 .PHONY:charts
 charts:
 	cd example && if [ -x env/bin/python ]; then env/bin/python plot_compare.py; else echo "no example/env; install matplotlib in example/env to generate charts"; fi
-
-.PHONY:cpuprof
-cpuprof:
-	go tool pprof -top cpuprofile.out | head -n 20
-
-.PHONY:memprof
-memprof:
-	go tool pprof -top memprofile.out | head -n 20
