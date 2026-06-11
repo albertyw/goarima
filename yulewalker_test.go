@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestAutocorrelationAtLag(t *testing.T) {
+func TestAutocovarianceAtLag(t *testing.T) {
 	testCases := []struct {
 		name     string
 		series   []float64
@@ -95,13 +95,13 @@ func TestAutocorrelationAtLag(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			actual := autocorrelationAtLag(tc.series, tc.lag)
+			actual := autocovarianceAtLag(tc.series, tc.lag)
 			assert.InDelta(t, tc.expected, actual, 1e-6)
 		})
 	}
 }
 
-func TestBuildAutocorrelationVector(t *testing.T) {
+func TestBuildAutocovarianceVector(t *testing.T) {
 	testCases := []struct {
 		name     string
 		series   []float64
@@ -166,7 +166,7 @@ func TestBuildAutocorrelationVector(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			actual := buildAutocorrelationVector(tc.series, tc.order)
+			actual := buildAutocovarianceVector(tc.series, tc.order)
 			assert.InDeltaSlice(t, tc.expected, actual, 1e-6)
 		})
 	}
