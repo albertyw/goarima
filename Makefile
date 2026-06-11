@@ -27,7 +27,6 @@ unit:
 .PHONY:cover
 cover: test
 	go tool cover -func=c.out
-	sed -i 's/github.com\/albertyw\/goarima\/v3\///g' c.out
 
 .PHONY:race
 race:
