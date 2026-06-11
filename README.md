@@ -78,6 +78,10 @@ if err := model.Fit(series); err != nil {
 forecast, err := model.Forecast(10)
 ```
 
+`Fit` returns an error for a series that is too short or contains a NaN or
+infinite value, and `Forecast` returns an error if the model has not been fitted
+yet.
+
 ### Coefficient refinement
 
 By default `Fit` uses the Hannan-Rissanen estimate. Two opt-in options refine it
@@ -103,10 +107,12 @@ model, err := goarima.AutoARIMA(series, 5, 2, 5, goarima.WithMLE())
 
 ```go
 model.Orders()   // (p, d, q)
-model.Phi()      // AR coefficients
-model.Theta()    // MA coefficients
+model.Phi()      // AR coefficients (copy)
+model.Theta()    // MA coefficients (copy)
 model.Sigma2()   // residual variance
 ```
+
+The slice getters return copies, so mutating the result never affects the model.
 
 The package also exposes the `Difference` / `Undifference` helpers used
 internally.

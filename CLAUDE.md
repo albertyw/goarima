@@ -22,7 +22,7 @@ CI (`.drone.yml`) runs `make test`, `make race`, `make cover`, `make benchmark`,
 
 ## Architecture
 
-Two entry points: construct a model with explicit orders via `NewARIMA(p,d,q)` + `Fit`, or let `AutoARIMA(series, maxP, maxD, maxQ)` choose the orders and return a fitted model. Both `Fit` and `AutoARIMA` are variadic in `FitOption`; `WithCSSRefinement()` enables the opt-in CSS refinement and `WithMLE()` the exact Gaussian MLE refinement (MLE takes precedence if both are passed).
+Two entry points: construct a model with explicit orders via `NewARIMA(p,d,q)` + `Fit`, or let `AutoARIMA(series, maxP, maxD, maxQ)` choose the orders and return a fitted model. Both `Fit` and `AutoARIMA` are variadic in `FitOption`; `WithCSSRefinement()` enables the opt-in CSS refinement and `WithMLE()` the exact Gaussian MLE refinement (MLE takes precedence if both are passed). `Fit` and `AutoARIMA` reject a series containing NaN or ±Inf (`validateFinite`); `Forecast` errors until the model has been fitted (the `fitted` flag).
 
 The `ARIMA.Fit` pipeline (`goarima.go`):
 
@@ -50,12 +50,12 @@ Key files:
 - `statespace.go` — `buildStateSpace` (Harvey ARMA state-space form), `solveLyapunov` (stationary init via the discrete Lyapunov equation), `kalmanConcentratedNLL` (Kalman prediction-error decomposition, concentrated negative log-likelihood).
 - `stability.go` — `isStationary` / `isInvertible` (reflection-coefficient root test), used by the fit guards and the refinement penalty.
 - `kpss.go` — `kpssLevelStationary`, the KPSS level-stationarity test used by `selectD`.
-- `yulewalker.go` — autocorrelation helpers and `solveYuleWalker` / `solveYuleWalkerFromAutocov` (used as the Hannan-Rissanen Stage 1 AR fit; guards constant series).
+- `yulewalker.go` — autocovariance helpers and `solveYuleWalker` / `solveYuleWalkerFromAutocov` (used as the Hannan-Rissanen Stage 1 AR fit; guards constant series).
 - `autoarima.go` — `AutoARIMA`, `selectD`, `aic`.
 
 By default, estimation is Hannan-Rissanen (pure linear algebra, no optimizer); `WithCSSRefinement()` adds a least-squares (CSS) refinement and `WithMLE()` an exact Gaussian maximum-likelihood refinement (Kalman filter, matching statsmodels' `method="statespace"`). The HR default and CSS refinement are approximate; MLE is the exact-likelihood fit, though small numeric differences from statsmodels remain.
 
-The `ARIMA` struct fields are unexported; access state through the getter methods (`Orders`, `Phi`, `Theta`, `LastY`, `LastE`, `LastOrig`, `Sigma2`).
+The `ARIMA` struct fields are unexported; access state through the getter methods (`Orders`, `Phi`, `Theta`, `LastY`, `LastE`, `LastOrig`, `Sigma2`). The slice getters (`Phi`, `Theta`, `LastY`, `LastE`) return copies (`copyFloats`), so callers cannot mutate internal model state.
 
 ## Example data & reference scripts
 
