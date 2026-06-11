@@ -96,6 +96,29 @@ func TestNewARIMAErrors(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestFitRejectsNonFiniteInput(t *testing.T) {
+	// NaN compares false against every threshold, so without an explicit guard a
+	// NaN-bearing series is misclassified as constant and "fits" successfully,
+	// silently forecasting NaN. Fit must reject non-finite input instead.
+	testCases := []struct {
+		name string
+		bad  float64
+	}{
+		{"NaN", math.NaN()},
+		{"+Inf", math.Inf(1)},
+		{"-Inf", math.Inf(-1)},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			series := []float64{1, 2, 1, 2, 1, 2, 1, 2, 1, 2}
+			series[3] = tc.bad
+			model, err := NewARIMA(1, 0, 0)
+			require.NoError(t, err)
+			assert.Error(t, model.Fit(series))
+		})
+	}
+}
+
 func TestFitTooShort(t *testing.T) {
 	model, err := NewARIMA(2, 1, 0)
 	require.NoError(t, err)

@@ -2,6 +2,7 @@ package goarima
 
 import (
 	"errors"
+	"fmt"
 	"math"
 )
 
@@ -29,6 +30,9 @@ func AutoARIMA(series []float64, maxP, maxD, maxQ int, opts ...FitOption) (*ARIM
 	}
 	if len(series) < 2 {
 		return nil, errors.New("AutoARIMA: series too short")
+	}
+	if err := validateFinite(series); err != nil {
+		return nil, fmt.Errorf("AutoARIMA: %w", err)
 	}
 
 	d := selectD(series, maxD)

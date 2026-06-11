@@ -122,6 +122,9 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
 	if len(series) <= m.d+m.p {
 		return errors.New("series too short for the requested ARIMA model")
 	}
+	if err := validateFinite(series); err != nil {
+		return err
+	}
 
 	// Remember the last value of the original series (for later undifferencing)
 	m.lastOrig = series[len(series)-1]
@@ -251,6 +254,19 @@ func (m *ARIMA) forecastDiff(h int) ([]float64, error) {
 		}
 	}
 	return diffPred, nil
+}
+
+// validateFinite returns an error if the series contains a NaN or infinite
+// value. NaN compares false against every threshold, so without this guard a
+// non-finite series can slip past the constancy and stability checks and
+// produce a "successfully" fitted model that silently forecasts NaN.
+func validateFinite(series []float64) error {
+	for i, v := range series {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return fmt.Errorf("series contains a non-finite value at index %d", i)
+		}
+	}
+	return nil
 }
 
 // mean returns the arithmetic mean of s, or 0 for an empty slice.
