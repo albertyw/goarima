@@ -1,6 +1,8 @@
 # goarima
 
 [![Build Status](https://drone.albertyw.com/api/badges/albertyw/goarima/status.svg)](https://drone.albertyw.com/albertyw/goarima)
+[![Go Reference](https://pkg.go.dev/badge/github.com/albertyw/goarima.svg)](https://pkg.go.dev/github.com/albertyw/goarima)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ![Sunspots forecast comparison](docs/images/sunspots.png)
 
