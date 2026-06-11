@@ -1,5 +1,7 @@
 # goarima
 
+[![Build Status](https://drone.albertyw.com/api/badges/albertyw/goarima/status.svg)](https://drone.albertyw.com/albertyw/goarima)
+
 ![Sunspots forecast comparison](docs/images/sunspots.png)
 
 A pure-Go implementation of ARIMA (AutoRegressive Integrated Moving Average)
