@@ -18,6 +18,7 @@ type ARIMA struct {
 	mu           float64   // mean of the differenced series (added back when forecasting)
 	anchors      []float64 // last value of the series differenced 0..d-1 times (for integration)
 	sigma2       float64   // variance of the residuals (not used in forecasting)
+	fitted       bool      // whether Fit has populated the coefficients/state
 }
 
 func NewARIMA(p, d, q int) (*ARIMA, error) {
@@ -190,6 +191,7 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
 		m.lastE = []float64{}
 	}
 
+	m.fitted = true
 	return nil
 }
 
@@ -198,6 +200,9 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
    --------------------------------------------------------------- */
 
 func (m *ARIMA) Forecast(h int) ([]float64, error) {
+	if !m.fitted {
+		return nil, errors.New("model must be fitted before forecasting")
+	}
 	if h <= 0 {
 		return nil, errors.New("forecast horizon must be positive")
 	}

@@ -125,6 +125,15 @@ func TestFitTooShort(t *testing.T) {
 	assert.Error(t, model.Fit([]float64{1, 2}))
 }
 
+func TestForecastBeforeFitErrors(t *testing.T) {
+	// Forecasting an unfitted model must error rather than silently returning a
+	// plausible-looking all-zero forecast from uninitialized state.
+	model, err := NewARIMA(2, 1, 1)
+	require.NoError(t, err)
+	_, err = model.Forecast(3)
+	assert.Error(t, err)
+}
+
 func TestForecastInvalidHorizon(t *testing.T) {
 	model, err := NewARIMA(1, 0, 0)
 	require.NoError(t, err)

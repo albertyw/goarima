@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `make example` — runs `example/compare.py`, which runs the Go demo (`go run .`), parses the orders goarima's `AutoARIMA` selected, fits `pmdarima` at those same orders, and prints the two interleaved per dataset. Needs the `example/env` Python venv; falls back to goarima-only (`go run .`) if absent. Not part of `make test`/CI.
 - `make charts` — runs `example/plot_compare.py` (reuses `compare.py`), which renders goarima-AutoARIMA-vs-pmdarima forecast charts at goarima's selected orders to the gitignored `example/charts/`. The committed copies linked from the README live under `docs/images/` (refresh by copying from `example/charts/`). Needs the `example/env` venv. Not part of `make test`/CI.
 
-CI (`.drone.yml`) runs `make test`, `make race`, `make cover`, `make benchmark`, the profiling targets, and `checkmake` on the Makefile.
+CI (`.drone.yml`) runs `make test`, `make race`, `make cover`, `make benchmark`, and `checkmake` on the Makefile.
 
 ## Architecture
 
