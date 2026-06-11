@@ -149,6 +149,32 @@ func TestGetters(t *testing.T) {
 	assert.GreaterOrEqual(t, model.Sigma2(), 0.0)
 }
 
+func TestGettersReturnCopies(t *testing.T) {
+	// The slice getters must return copies: mutating a returned slice must not
+	// corrupt the model's state or change its forecasts.
+	series := genARMA11(500, 0.5, 0.4, 17)
+	model, err := NewARIMA(1, 0, 1)
+	require.NoError(t, err)
+	require.NoError(t, model.Fit(series))
+
+	before, err := model.Forecast(3)
+	require.NoError(t, err)
+
+	model.Phi()[0] = 99
+	model.Theta()[0] = 99
+	model.LastY()[0] = 99
+	model.LastE()[0] = 99
+
+	assert.NotEqual(t, 99.0, model.Phi()[0])
+	assert.NotEqual(t, 99.0, model.Theta()[0])
+	assert.NotEqual(t, 99.0, model.LastY()[0])
+	assert.NotEqual(t, 99.0, model.LastE()[0])
+
+	after, err := model.Forecast(3)
+	require.NoError(t, err)
+	assert.Equal(t, before, after)
+}
+
 func TestFitWithCSSRefinementLowersResidualVariance(t *testing.T) {
 	// On real ARMA data, refining the HR estimate by CSS cannot increase the
 	// residual variance (it improves or falls back to the seed).

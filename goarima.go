@@ -47,24 +47,32 @@ func (m *ARIMA) Orders() (int, int, int) {
 	return m.p, m.d, m.q
 }
 
-// Phi returns the AR coefficients of the model.
+// Phi returns a copy of the AR coefficients of the model.
 func (m *ARIMA) Phi() []float64 {
-	return m.phi
+	return copyFloats(m.phi)
 }
 
-// Theta returns the MA coefficients of the model.
+// Theta returns a copy of the MA coefficients of the model.
 func (m *ARIMA) Theta() []float64 {
-	return m.theta
+	return copyFloats(m.theta)
 }
 
-// LastY returns the last p differenced observations.
+// LastY returns a copy of the last p differenced observations.
 func (m *ARIMA) LastY() []float64 {
-	return m.lastY
+	return copyFloats(m.lastY)
 }
 
-// LastE returns the last q residuals.
+// LastE returns a copy of the last q residuals.
 func (m *ARIMA) LastE() []float64 {
-	return m.lastE
+	return copyFloats(m.lastE)
+}
+
+// copyFloats returns a copy of s, so getters never expose internal state to
+// caller mutation. An empty (or nil) slice yields an empty non-nil slice.
+func copyFloats(s []float64) []float64 {
+	out := make([]float64, len(s))
+	copy(out, s)
+	return out
 }
 
 // LastOrig returns the last original value (for undifferencing).
