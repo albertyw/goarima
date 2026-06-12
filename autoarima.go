@@ -3,7 +3,6 @@ package goarima
 import (
 	"errors"
 	"fmt"
-	"math"
 )
 
 // AutoARIMA selects ARIMA orders automatically and returns a fitted model.
@@ -41,28 +40,21 @@ func AutoARIMA(series []float64, maxP, maxD, maxQ int, opts ...FitOption) (*ARIM
 	}
 
 	d := selectD(series, maxD)
-	n := len(series) - d // length of the differenced series, common to all (p,q)
+	space := searchSpace{
+		series: series,
+		d:      d,
+		n:      len(series) - d, // differenced length, common to all (p,q)
+		maxP:   maxP,
+		maxQ:   maxQ,
+		crit:   cfg.criterion,
+		opts:   opts,
+	}
 
-	bestScore := math.Inf(1)
-	bestP, bestQ := -1, -1
-	for p := 0; p <= maxP; p++ {
-		for q := 0; q <= maxQ; q++ {
-			if p == 0 && q == 0 {
-				continue
-			}
-			model, err := NewARIMA(p, d, q)
-			if err != nil {
-				continue
-			}
-			if err := model.Fit(series, opts...); err != nil {
-				continue
-			}
-			s := score(cfg.criterion, n, model.sigma2, p, q)
-			if s < bestScore {
-				bestScore = s
-				bestP, bestQ = p, q
-			}
-		}
+	var bestP, bestQ int
+	if cfg.stepwise {
+		bestP, bestQ = space.stepwiseSearch()
+	} else {
+		bestP, bestQ = space.gridSearch()
 	}
 
 	if bestP < 0 {

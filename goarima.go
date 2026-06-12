@@ -97,6 +97,7 @@ type fitConfig struct {
 	refine    bool      // refine the Hannan-Rissanen estimate by minimizing the CSS
 	mle       bool      // refine the Hannan-Rissanen estimate by exact Gaussian MLE
 	criterion Criterion // AutoARIMA-only: information criterion to minimize
+	stepwise  bool      // AutoARIMA-only: use the stepwise search instead of the grid
 }
 
 // FitOption configures optional Fit behavior. The zero set of options keeps the
@@ -129,6 +130,14 @@ func WithMLE() FitOption {
 // affects AutoARIMA; Fit ignores it.
 func WithCriterion(c Criterion) FitOption {
 	return func(cfg *fitConfig) { cfg.criterion = c }
+}
+
+// WithStepwise makes AutoARIMA select p and q with a Hyndman-Khandakar stepwise
+// neighbor search instead of the exhaustive grid. It usually fits far fewer
+// candidates at the cost of being a heuristic (it can miss the grid's global
+// optimum). This option only affects AutoARIMA; Fit ignores it.
+func WithStepwise() FitOption {
+	return func(c *fitConfig) { c.stepwise = true }
 }
 
 func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
