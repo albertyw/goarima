@@ -52,9 +52,9 @@ func AutoARIMA(series []float64, maxP, maxD, maxQ int, opts ...FitOption) (*ARIM
 
 	var bestP, bestQ int
 	if cfg.stepwise {
-		bestP, bestQ = space.stepwiseSearch()
+		bestP, bestQ = space.stepwiseSearch(cfg.parallel)
 	} else {
-		bestP, bestQ = space.gridSearch()
+		bestP, bestQ = space.gridSearch(cfg.parallel)
 	}
 
 	if bestP < 0 {

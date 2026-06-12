@@ -1,6 +1,10 @@
 package goarima
 
-import "math"
+import (
+	"math"
+	"runtime"
+	"sync"
+)
 
 // searchSpace holds the inputs shared by every candidate evaluation during an
 // AutoARIMA order search. d is fixed (chosen by selectD); the search ranges over
@@ -40,20 +44,60 @@ func (s searchSpace) evalCandidate(p, q int) candidate {
 	return candidate{score: score(s.crit, s.n, model.sigma2, p, q), ok: true}
 }
 
+// evalBatch fits the given orders and returns candidates aligned with points.
+// When parallel is true the fits run across up to GOMAXPROCS goroutines; results
+// are written by index, so the returned slice is independent of completion order.
+func (s searchSpace) evalBatch(points [][2]int, parallel bool) []candidate {
+	out := make([]candidate, len(points))
+	if !parallel || len(points) <= 1 {
+		for i, pt := range points {
+			out[i] = s.evalCandidate(pt[0], pt[1])
+		}
+		return out
+	}
+	workers := runtime.GOMAXPROCS(0)
+	if workers > len(points) {
+		workers = len(points)
+	}
+	idx := make(chan int)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for w := 0; w < workers; w++ {
+		go func() {
+			defer wg.Done()
+			for i := range idx {
+				out[i] = s.evalCandidate(points[i][0], points[i][1])
+			}
+		}()
+	}
+	for i := range points {
+		idx <- i
+	}
+	close(idx)
+	wg.Wait()
+	return out
+}
+
 // gridSearch evaluates every (p,q) in 0..maxP × 0..maxQ (skipping (0,0)) and
-// returns the order minimizing the criterion. It scans p-outer, q-inner and
-// keeps the first strictly-smaller score, so ties break to the lowest p then the
-// lowest q. bestP is -1 when no candidate could be fit.
-func (s searchSpace) gridSearch() (bestP, bestQ int) {
-	bestScore := math.Inf(1)
-	bestP, bestQ = -1, -1
+// returns the order minimizing the criterion. Candidates are enumerated p-outer,
+// q-inner and reduced in that order, keeping the first strictly-smaller score, so
+// ties break to the lowest p then the lowest q — identical whether the fits run
+// serially or in parallel. bestP is -1 when no candidate could be fit.
+func (s searchSpace) gridSearch(parallel bool) (bestP, bestQ int) {
+	points := make([][2]int, 0, (s.maxP+1)*(s.maxQ+1))
 	for p := 0; p <= s.maxP; p++ {
 		for q := 0; q <= s.maxQ; q++ {
-			c := s.evalCandidate(p, q)
-			if c.ok && c.score < bestScore {
-				bestScore = c.score
-				bestP, bestQ = p, q
-			}
+			points = append(points, [2]int{p, q})
+		}
+	}
+	results := s.evalBatch(points, parallel)
+
+	bestScore := math.Inf(1)
+	bestP, bestQ = -1, -1
+	for i, c := range results {
+		if c.ok && c.score < bestScore {
+			bestScore = c.score
+			bestP, bestQ = points[i][0], points[i][1]
 		}
 	}
 	return bestP, bestQ
@@ -63,42 +107,60 @@ func (s searchSpace) gridSearch() (bestP, bestQ int) {
 // few seed orders it repeatedly moves to the best strictly-better neighbor until
 // none improves. It typically fits far fewer candidates than the grid but is a
 // heuristic and can miss the global optimum. Each (p,q) is fit at most once
-// (cached). bestP is -1 when no candidate could be fit.
-func (s searchSpace) stepwiseSearch() (bestP, bestQ int) {
+// (cached); when parallel is true, the candidates in each pass are fit
+// concurrently, then reduced in a fixed order so the result matches the serial
+// run. bestP is -1 when no candidate could be fit.
+func (s searchSpace) stepwiseSearch(parallel bool) (bestP, bestQ int) {
 	cache := map[[2]int]candidate{}
-	evalCached := func(p, q int) candidate {
-		key := [2]int{p, q}
-		if c, seen := cache[key]; seen {
-			return c
+	// fill fits every point in pts not already cached (in parallel when asked),
+	// storing each result so later passes never refit the same order.
+	fill := func(pts [][2]int) {
+		var todo [][2]int
+		queued := map[[2]int]bool{}
+		for _, pt := range pts {
+			if _, seen := cache[pt]; seen || queued[pt] {
+				continue
+			}
+			queued[pt] = true
+			todo = append(todo, pt)
 		}
-		c := s.evalCandidate(p, q)
-		cache[key] = c
-		return c
+		for i, c := range s.evalBatch(todo, parallel) {
+			cache[todo[i]] = c
+		}
 	}
 
 	bestScore := math.Inf(1)
 	bestP, bestQ = -1, -1
-	consider := func(p, q int) {
-		c := evalCached(p, q)
-		if c.ok && c.score < bestScore {
+	consider := func(pt [2]int) {
+		if c := cache[pt]; c.ok && c.score < bestScore {
 			bestScore = c.score
-			bestP, bestQ = p, q
+			bestP, bestQ = pt[0], pt[1]
 		}
 	}
 
 	// Seed orders, clamped to the maxima; (0,0) seeds are simply rejected by eval.
+	seeds := make([][2]int, 0, 3)
 	for _, seed := range [][2]int{{2, 2}, {1, 0}, {0, 1}} {
-		consider(min(seed[0], s.maxP), min(seed[1], s.maxQ))
+		seeds = append(seeds, [2]int{min(seed[0], s.maxP), min(seed[1], s.maxQ)})
+	}
+	fill(seeds)
+	for _, pt := range seeds {
+		consider(pt)
 	}
 	if bestP < 0 {
 		return -1, -1
 	}
 
-	neighbors := [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {-1, -1}}
+	deltas := [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {-1, -1}}
 	for {
 		curP, curQ := bestP, bestQ
-		for _, n := range neighbors {
-			consider(curP+n[0], curQ+n[1])
+		nbrs := make([][2]int, len(deltas))
+		for i, d := range deltas {
+			nbrs[i] = [2]int{curP + d[0], curQ + d[1]}
+		}
+		fill(nbrs)
+		for _, pt := range nbrs {
+			consider(pt)
 		}
 		if bestP == curP && bestQ == curQ {
 			break // no neighbor improved on the current best

@@ -98,6 +98,7 @@ type fitConfig struct {
 	mle       bool      // refine the Hannan-Rissanen estimate by exact Gaussian MLE
 	criterion Criterion // AutoARIMA-only: information criterion to minimize
 	stepwise  bool      // AutoARIMA-only: use the stepwise search instead of the grid
+	parallel  bool      // AutoARIMA-only: fit candidate orders concurrently
 }
 
 // FitOption configures optional Fit behavior. The zero set of options keeps the
@@ -138,6 +139,14 @@ func WithCriterion(c Criterion) FitOption {
 // optimum). This option only affects AutoARIMA; Fit ignores it.
 func WithStepwise() FitOption {
 	return func(c *fitConfig) { c.stepwise = true }
+}
+
+// WithParallel makes AutoARIMA fit candidate orders concurrently, across up to
+// GOMAXPROCS goroutines. Selection is deterministic and identical to the serial
+// search (results are reduced in a fixed order), so this only changes speed.
+// This option only affects AutoARIMA; Fit ignores it.
+func WithParallel() FitOption {
+	return func(c *fitConfig) { c.parallel = true }
 }
 
 func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
