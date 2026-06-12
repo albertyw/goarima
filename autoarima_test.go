@@ -142,9 +142,9 @@ func TestAutoARIMAWithMLE(t *testing.T) {
 
 func TestAIC(t *testing.T) {
 	// Lower residual variance gives a lower (better) AIC.
-	assert.Less(t, aic(100, 0.5, 1, 0), aic(100, 1.0, 1, 0))
+	assert.Less(t, score(AIC, 100, 0.5, 1, 0), score(AIC, 100, 1.0, 1, 0))
 	// For equal variance, more parameters gives a higher AIC.
-	assert.Less(t, aic(100, 1.0, 1, 0), aic(100, 1.0, 2, 1))
+	assert.Less(t, score(AIC, 100, 1.0, 1, 0), score(AIC, 100, 1.0, 2, 1))
 	// Degenerate (zero) variance stays finite.
-	assert.False(t, math.IsInf(aic(100, 0, 1, 1), 0))
+	assert.False(t, math.IsInf(score(AIC, 100, 0, 1, 1), 0))
 }
