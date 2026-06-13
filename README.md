@@ -34,8 +34,10 @@ Requires Go 1.25+.
 
 ### Automatic order selection
 
-`AutoARIMA` chooses `d` with a KPSS stationarity test and then grid-searches `p` and
-`q` (up to the given maxima) to minimize the AIC, returning a fitted model.
+`AutoARIMA` chooses `d` with a KPSS stationarity test and then searches `p` and
+`q` (up to the given maxima) to minimize an information criterion, returning a
+fitted model. By default it minimizes the AIC with an exhaustive grid search; see
+[Order-search options](#order-search-options) to change the criterion or strategy.
 
 ```go
 package main
@@ -103,6 +105,29 @@ options are supplied, `WithMLE` takes precedence.
 err := model.Fit(series, goarima.WithMLE())
 // AutoARIMA accepts the same options and threads them through every candidate fit:
 model, err := goarima.AutoARIMA(series, 5, 2, 5, goarima.WithMLE())
+```
+
+### Order-search options
+
+`AutoARIMA` takes three further options that tune *how* the orders are searched
+(they only affect `AutoARIMA`; `Fit` ignores them):
+
+- `WithCriterion(c)` — the information criterion to minimize: `AIC` (default),
+  `BIC` (penalizes extra parameters more), or `AICc` (small-sample-corrected AIC).
+- `WithStepwise()` — replace the exhaustive grid with a Hyndman-Khandakar stepwise
+  neighbor search. It fits far fewer candidates (a hill-climb from a few seed
+  orders) but is a heuristic and can miss the grid's global optimum.
+- `WithParallel()` — fit candidate orders concurrently across `GOMAXPROCS`
+  goroutines. Selection is deterministic and identical to the serial search, so it
+  only changes speed — and it pays off only when each fit is expensive (e.g. with
+  `WithMLE`); for the fast default Hannan-Rissanen fits the goroutine overhead
+  outweighs the benefit.
+
+```go
+model, err := goarima.AutoARIMA(series, 5, 2, 5,
+    goarima.WithCriterion(goarima.BIC),
+    goarima.WithStepwise(),
+)
 ```
 
 ### Inspecting a fitted model

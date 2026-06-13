@@ -3,7 +3,6 @@ package goarima
 import (
 	"errors"
 	"fmt"
-	"math"
 )
 
 // AutoARIMA selects ARIMA orders automatically and returns a fitted model.
@@ -11,19 +10,19 @@ import (
 // The differencing order d is chosen by the KPSS stationarity test (difference
 // until the series tests stationary, up to maxD). The non-seasonal orders p
 // and q are then chosen by an exhaustive grid search over 0..maxP and 0..maxQ
-// that minimizes the Akaike Information Criterion (AIC); the (0,0) combination
-// is skipped. Candidate orders whose fit fails (e.g. too few observations) are
-// skipped.
+// that minimizes an information criterion; the (0,0) combination is skipped.
+// Candidate orders whose fit fails (e.g. too few observations) are skipped.
 //
-// Any FitOption (e.g. WithCSSRefinement, WithMLE) is threaded through to every
-// candidate fit and the final refit, so candidates are scored and the final
-// model is fit with the same options.
+// The criterion defaults to AIC and can be changed with WithCriterion (AIC,
+// BIC, or AICc). Any FitOption (e.g. WithCSSRefinement, WithMLE) is threaded
+// through to every candidate fit and the final refit, so candidates are scored
+// and the final model is fit with the same options.
 //
-// Note that the AIC used for selection is always computed from the residual
-// variance (see aic), even when WithMLE is supplied: the refinement lowers each
-// candidate's residual variance and thus influences selection, but the score is
-// not the exact Gaussian-likelihood AIC. A selectable likelihood-based criterion
-// is left to a later phase.
+// Note that the criterion is always computed from the residual variance (see
+// score), even when WithMLE is supplied: the refinement lowers each candidate's
+// residual variance and thus influences selection, but the score is not the
+// exact Gaussian-likelihood criterion. A likelihood-based criterion is left to
+// a later phase.
 func AutoARIMA(series []float64, maxP, maxD, maxQ int, opts ...FitOption) (*ARIMA, error) {
 	if maxP < 0 || maxD < 0 || maxQ < 0 {
 		return nil, errors.New("AutoARIMA: max orders must be non-negative")
@@ -35,29 +34,27 @@ func AutoARIMA(series []float64, maxP, maxD, maxQ int, opts ...FitOption) (*ARIM
 		return nil, fmt.Errorf("AutoARIMA: %w", err)
 	}
 
-	d := selectD(series, maxD)
-	n := len(series) - d // length of the differenced series, common to all (p,q)
+	var cfg fitConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
 
-	bestAIC := math.Inf(1)
-	bestP, bestQ := -1, -1
-	for p := 0; p <= maxP; p++ {
-		for q := 0; q <= maxQ; q++ {
-			if p == 0 && q == 0 {
-				continue
-			}
-			model, err := NewARIMA(p, d, q)
-			if err != nil {
-				continue
-			}
-			if err := model.Fit(series, opts...); err != nil {
-				continue
-			}
-			a := aic(n, model.sigma2, p, q)
-			if a < bestAIC {
-				bestAIC = a
-				bestP, bestQ = p, q
-			}
-		}
+	d := selectD(series, maxD)
+	space := searchSpace{
+		series: series,
+		d:      d,
+		n:      len(series) - d, // differenced length, common to all (p,q)
+		maxP:   maxP,
+		maxQ:   maxQ,
+		crit:   cfg.criterion,
+		opts:   opts,
+	}
+
+	var bestP, bestQ int
+	if cfg.stepwise {
+		bestP, bestQ = space.stepwiseSearch(cfg.parallel)
+	} else {
+		bestP, bestQ = space.gridSearch(cfg.parallel)
 	}
 
 	if bestP < 0 {
@@ -87,18 +84,4 @@ func selectD(series []float64, maxD int) int {
 		cur = Difference(cur, 1)
 	}
 	return maxD
-}
-
-// aic returns the Akaike Information Criterion for a model with the given
-// residual variance and orders, using the Gaussian log-likelihood form
-// n·ln(σ²) + 2k where k = p+q+1 (AR + MA coefficients plus the variance).
-// A floor on σ² keeps the value finite for degenerate (perfectly fit) series,
-// so ties are broken by the parameter count.
-func aic(n int, sigma2 float64, p, q int) float64 {
-	const floor = 1e-12
-	if sigma2 < floor {
-		sigma2 = floor
-	}
-	k := p + q + 1
-	return float64(n)*math.Log(sigma2) + 2*float64(k)
 }

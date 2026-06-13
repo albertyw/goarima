@@ -91,10 +91,14 @@ func (m *ARIMA) Sigma2() float64 {
    Public API – Fit
    --------------------------------------------------------------- */
 
-// fitConfig holds optional Fit behavior toggled by FitOption values.
+// fitConfig holds optional Fit behavior toggled by FitOption values. The
+// criterion field is read only by AutoARIMA (Fit ignores it).
 type fitConfig struct {
-	refine bool // refine the Hannan-Rissanen estimate by minimizing the CSS
-	mle    bool // refine the Hannan-Rissanen estimate by exact Gaussian MLE
+	refine    bool      // refine the Hannan-Rissanen estimate by minimizing the CSS
+	mle       bool      // refine the Hannan-Rissanen estimate by exact Gaussian MLE
+	criterion Criterion // AutoARIMA-only: information criterion to minimize
+	stepwise  bool      // AutoARIMA-only: use the stepwise search instead of the grid
+	parallel  bool      // AutoARIMA-only: fit candidate orders concurrently
 }
 
 // FitOption configures optional Fit behavior. The zero set of options keeps the
@@ -120,6 +124,29 @@ func WithCSSRefinement() FitOption {
 // MLE takes precedence.
 func WithMLE() FitOption {
 	return func(c *fitConfig) { c.mle = true }
+}
+
+// WithCriterion selects the information criterion AutoARIMA minimizes during
+// order selection (AIC, BIC, or AICc). The default is AIC. This option only
+// affects AutoARIMA; Fit ignores it.
+func WithCriterion(c Criterion) FitOption {
+	return func(cfg *fitConfig) { cfg.criterion = c }
+}
+
+// WithStepwise makes AutoARIMA select p and q with a Hyndman-Khandakar stepwise
+// neighbor search instead of the exhaustive grid. It usually fits far fewer
+// candidates at the cost of being a heuristic (it can miss the grid's global
+// optimum). This option only affects AutoARIMA; Fit ignores it.
+func WithStepwise() FitOption {
+	return func(c *fitConfig) { c.stepwise = true }
+}
+
+// WithParallel makes AutoARIMA fit candidate orders concurrently, across up to
+// GOMAXPROCS goroutines. Selection is deterministic and identical to the serial
+// search (results are reduced in a fixed order), so this only changes speed.
+// This option only affects AutoARIMA; Fit ignores it.
+func WithParallel() FitOption {
+	return func(c *fitConfig) { c.parallel = true }
 }
 
 func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
