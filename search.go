@@ -151,6 +151,10 @@ func (s searchSpace) stepwiseSearch(parallel bool) (bestP, bestQ int) {
 		return -1, -1
 	}
 
+	// One-at-a-time p/q moves plus the main diagonal {1,1}/{-1,-1}, which lets the
+	// climb add or drop an AR and MA term together (Hyndman-Khandakar). The
+	// anti-diagonal is omitted: trading an AR term for an MA one rarely improves a
+	// well-seeded fit and would only widen each pass without changing the optimum.
 	deltas := [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {-1, -1}}
 	for {
 		curP, curQ := bestP, bestQ

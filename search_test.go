@@ -41,7 +41,7 @@ func TestStepwiseFindsGridOptimumOnCleanAR1(t *testing.T) {
 	assert.Equal(t, [3]int{gp, gd, gq}, [3]int{sp, sd, sq})
 }
 
-func TestStepwiseNeverScoresWorseIsImpossibleButProducesValidFit(t *testing.T) {
+func TestStepwiseProducesValidFit(t *testing.T) {
 	// Stepwise is a heuristic; on every example-like series it must still return
 	// a fitted, invertible model with a finite forecast.
 	series := rampWithNoise(200, 0.5, 3)
