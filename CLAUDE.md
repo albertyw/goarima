@@ -39,7 +39,7 @@ With `WithCSSRefinement()` or `WithMLE()`, after Stage 2 the `(phi, theta)` seed
 
 Forecasting (`ARIMA.Forecast`) runs `forecastDiff` on the centered scale (rolling AR+MA recursion, future errors = 0), adds `mu` back, then integrates with `Undifference` once per differencing level using the stored `anchors` (a no-op when `d == 0`).
 
-`AutoARIMA` (`autoarima.go`): `selectD` picks `d` with the KPSS level-stationarity test (`kpss.go`) — difference until the series tests stationary, up to maxD; then a grid search over `p,q` minimizes `aic(n, sigma2, p, q)`, skipping `(0,0)` and any fit that errors (non-stationary/non-invertible fits are rejected in `estimate.go`, see `stability.go`).
+`AutoARIMA` (`autoarima.go` + `search.go`): `selectD` picks `d` with the KPSS level-stationarity test (`kpss.go`) — difference until the series tests stationary, up to maxD; then a search over `p,q` minimizes an information criterion (`score(crit, n, sigma2, p, q)` in `criterion.go`), skipping `(0,0)` and any fit that errors (non-stationary/non-invertible fits are rejected in `estimate.go`, see `stability.go`). The criterion defaults to AIC and is selectable with `WithCriterion(AIC|BIC|AICc)`. The search is an exhaustive grid by default; `WithStepwise()` switches to a Hyndman-Khandakar neighbor hill-climb (fewer fits, heuristic) and `WithParallel()` fits candidates concurrently (GOMAXPROCS workers, deterministic reduce — same result as serial, only faster when each fit is expensive, e.g. `WithMLE`). All three are `FitOption`s that only `AutoARIMA` reads; `Fit` ignores them.
 
 Key files:
 - `goarima.go` — `ARIMA` struct, `NewARIMA`, `Fit`, `Forecast`/`forecastDiff`, getters, `mean`/`meanSquare`/`isConstant`.
@@ -51,7 +51,9 @@ Key files:
 - `stability.go` — `isStationary` / `isInvertible` (reflection-coefficient root test), used by the fit guards and the refinement penalty.
 - `kpss.go` — `kpssLevelStationary`, the KPSS level-stationarity test used by `selectD`.
 - `yulewalker.go` — autocovariance helpers and `solveYuleWalker` / `solveYuleWalkerFromAutocov` (used as the Hannan-Rissanen Stage 1 AR fit; guards constant series).
-- `autoarima.go` — `AutoARIMA`, `selectD`, `aic`.
+- `autoarima.go` — `AutoARIMA`, `selectD` (order-search dispatch + final refit).
+- `criterion.go` — `Criterion` (AIC/BIC/AICc) and `score`, the information criterion AutoARIMA minimizes.
+- `search.go` — `searchSpace`, `evalCandidate`/`evalBatch` (optionally parallel), `gridSearch`, and `stepwiseSearch` (Hyndman-Khandakar).
 
 By default, estimation is Hannan-Rissanen (pure linear algebra, no optimizer); `WithCSSRefinement()` adds a least-squares (CSS) refinement and `WithMLE()` an exact Gaussian maximum-likelihood refinement (Kalman filter, matching statsmodels' `method="statespace"`). The HR default and CSS refinement are approximate; MLE is the exact-likelihood fit, though small numeric differences from statsmodels remain.
 

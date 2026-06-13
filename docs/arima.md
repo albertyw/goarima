@@ -255,11 +255,11 @@ This replaces an earlier variance heuristic that **over-differenced**
 already-stationary but strongly autocorrelated series (e.g. it pushed sunspots
 to `d=2`). The KPSS test keeps such series at `d=0` or `d=1`.
 
-### Choosing p and q (AIC grid search)
+### Choosing p and q (information-criterion search)
 
 With `d` fixed, try every `(p, q)` combination up to the limits (skipping the
-empty `(0,0)` model), fit each, and keep the one with the lowest **Akaike
-Information Criterion**:
+empty `(0,0)` model), fit each, and keep the one with the lowest **information
+criterion**. By default that is the **Akaike Information Criterion**:
 
 ```
 AIC = n·ln(σ²) + 2·k        where k = p + q + 1
@@ -268,8 +268,26 @@ AIC = n·ln(σ²) + 2·k        where k = p + q + 1
 - `n·ln(σ²)` rewards a tight fit (small residual variance).
 - `2·k` penalizes complexity (more coefficients), discouraging overfitting.
 
-The model with the best balance of fit and simplicity wins. Because AIC is only
-comparable at a fixed `d` and sample size, the search runs after `d` is chosen.
+The model with the best balance of fit and simplicity wins. Because the criterion
+is only comparable at a fixed `d` and sample size, the search runs after `d` is
+chosen.
+
+`WithCriterion` swaps in two alternatives (`criterion.go`):
+
+```
+BIC  = n·ln(σ²) + k·ln(n)              # heavier complexity penalty for n > ~7
+AICc = AIC + 2k(k+1)/(n − k − 1)       # small-sample correction; +∞ once k ≥ n−1
+```
+
+**Stepwise search.** The default is an exhaustive grid. `WithStepwise()` instead
+runs a **Hyndman-Khandakar** hill-climb (`search.go`): start from a few seed
+orders, evaluate the neighbors `(p±1, q)`, `(p, q±1)`, `(p±1, q±1)`, move to the
+best strictly-better one, and repeat until none improves. It fits far fewer models
+(roughly linear in the path length instead of `O(p·q)`) but, being a heuristic,
+can settle on a local rather than the global optimum. `WithParallel()` fits the
+candidates of each step concurrently; the result is identical to the serial
+search, so it only changes wall-clock time (and only helps when each fit is
+expensive, e.g. under `WithMLE`).
 
 ---
 
