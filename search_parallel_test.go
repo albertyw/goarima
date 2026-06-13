@@ -38,6 +38,19 @@ func TestParallelGridMatchesSerial(t *testing.T) {
 	}
 }
 
+func TestParallelMatchesSerialWithMLE(t *testing.T) {
+	// WithParallel exists to overlap expensive fits, so exercise its real use case:
+	// with WithMLE every candidate runs a Kalman-filter Nelder-Mead search, yet the
+	// concurrent selection must still be bit-identical to the serial one. Bounds are
+	// kept small because MLE fits are slow.
+	series := ar1Series(160, 0.6, 21)
+	serial, err := AutoARIMA(series, 2, 1, 2, WithMLE())
+	require.NoError(t, err)
+	par, err := AutoARIMA(series, 2, 1, 2, WithMLE(), WithParallel())
+	require.NoError(t, err)
+	sameModel(t, serial, par)
+}
+
 func TestParallelStepwiseMatchesSerial(t *testing.T) {
 	for _, series := range [][]float64{
 		ar1Series(300, 0.6, 4),
