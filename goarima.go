@@ -11,41 +11,66 @@ import (
    --------------------------------------------------------------- */
 
 type ARIMA struct {
-	p, d, q      int       // AR, differencing, MA non-seasonal orders
-	phi, theta   []float64 // AR & MA coefficients
-	lastY, lastE []float64 // last p centered differenced observations & last q residuals
-	lastOrig     float64   // last original value (for undifferencing)
-	mu           float64   // mean of the differenced series (added back when forecasting)
-	anchors      []float64 // last value of the series differenced 0..d-1 times (for integration)
-	sigma2       float64   // variance of the residuals (not used in forecasting)
-	fitted       bool      // whether Fit has populated the coefficients/state
+	p, d, q         int         // AR, differencing, MA non-seasonal orders
+	bigD, period    int         // seasonal differencing order D and seasonal period m
+	phi, theta      []float64   // AR & MA coefficients
+	lastY, lastE    []float64   // last p centered differenced observations & last q residuals
+	lastOrig        float64     // last original value (for undifferencing)
+	mu              float64     // mean of the differenced series (added back when forecasting)
+	anchors         []float64   // last value of s differenced 0..d-1 times (regular integration)
+	seasonalAnchors [][]float64 // last m values of the series seasonally differenced 0..D-1 times
+	sigma2          float64     // variance of the residuals (not used in forecasting)
+	fitted          bool        // whether Fit has populated the coefficients/state
 }
 
+// NewARIMA constructs a non-seasonal ARIMA(p,d,q) model. It is shorthand for
+// NewSARIMA(p, d, q, 0, 0).
 func NewARIMA(p, d, q int) (*ARIMA, error) {
-	if p < 0 || d < 0 || q < 0 {
+	return NewSARIMA(p, d, q, 0, 0)
+}
+
+// NewSARIMA constructs a seasonal ARIMA model with seasonal differencing order D
+// and seasonal period m, i.e. the class (1-B)^d (1-B^m)^D y_t = ARMA(p,q). In
+// this version the seasonal AR and MA orders are always 0 (seasonal AR/MA is a
+// later phase); D and m add seasonal differencing only. m must be >= 2 when D > 0.
+func NewSARIMA(p, d, q, D, m int) (*ARIMA, error) {
+	if p < 0 || d < 0 || q < 0 || D < 0 {
 		return nil, errors.New("ARIMA orders must be non-negative")
 	}
-	if p == 0 && d == 0 && q == 0 {
-		return nil, errors.New("at least one of AR, differencing or MA order must be positive")
+	if p == 0 && d == 0 && q == 0 && D == 0 {
+		return nil, errors.New("at least one of AR, differencing, MA, or seasonal differencing order must be positive")
+	}
+	if D > 0 && m < 2 {
+		return nil, errors.New("seasonal period m must be at least 2 when D > 0")
 	}
 	return &ARIMA{
-		p:        p,
-		d:        d,
-		q:        q,
-		phi:      make([]float64, p),
-		theta:    make([]float64, q),
-		lastY:    make([]float64, p),
-		lastE:    make([]float64, q),
-		lastOrig: 0.0,
-		mu:       0.0,
-		anchors:  make([]float64, d),
-		sigma2:   0.0,
+		p:               p,
+		d:               d,
+		q:               q,
+		bigD:            D,
+		period:          m,
+		phi:             make([]float64, p),
+		theta:           make([]float64, q),
+		lastY:           make([]float64, p),
+		lastE:           make([]float64, q),
+		lastOrig:        0.0,
+		mu:              0.0,
+		anchors:         make([]float64, d),
+		seasonalAnchors: make([][]float64, D),
+		sigma2:          0.0,
 	}, nil
 }
 
 // Orders returns the ARIMA orders (p, d, q).
 func (m *ARIMA) Orders() (int, int, int) {
 	return m.p, m.d, m.q
+}
+
+// SeasonalOrders returns the seasonal orders (P, D, Q, m). In this version P and
+// Q are always 0 (seasonal AR/MA is not yet implemented); D and m reflect the
+// seasonal differencing applied by the model.
+func (m *ARIMA) SeasonalOrders() (int, int, int, int) {
+	return 0, m.bigD, 0, m.period
 }
 
 // Phi returns a copy of the AR coefficients of the model.
@@ -155,7 +180,7 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
 		opt(&cfg)
 	}
 
-	if len(series) <= m.d+m.p {
+	if len(series) <= m.bigD*m.period+m.d+m.p {
 		return errors.New("series too short for the requested ARIMA model")
 	}
 	if err := validateFinite(series); err != nil {
@@ -165,17 +190,29 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
 	// Remember the last value of the original series (for later undifferencing)
 	m.lastOrig = series[len(series)-1]
 
-	// 1. record integration anchors – the last value of the series differenced
-	//    0,1,…,d-1 times – so forecasts can be lifted back to the original scale.
+	// 0. seasonal differencing: at each level record the last m values (the
+	//    anchor used to integrate forecasts back), then difference at lag m.
+	m.seasonalAnchors = make([][]float64, m.bigD)
+	s := series
+	for k := 0; k < m.bigD; k++ {
+		anchor := make([]float64, m.period)
+		copy(anchor, s[len(s)-m.period:])
+		m.seasonalAnchors[k] = anchor
+		s = SeasonalDifference(s, m.period, 1)
+	}
+
+	// 1. record regular integration anchors – the last value of the seasonally-
+	//    differenced series s differenced 0,1,…,d-1 times – so forecasts can be
+	//    lifted back to the original scale.
 	m.anchors = make([]float64, m.d)
-	cur := series
+	cur := s
 	for k := 0; k < m.d; k++ {
 		m.anchors[k] = cur[len(cur)-1]
 		cur = Difference(cur, 1)
 	}
 
-	// 2. difference the series d times and center it on its mean
-	y := Difference(series, m.d)
+	// 2. difference s d times and center it on its mean
+	y := Difference(s, m.d)
 	m.mu = mean(y)
 	z := make([]float64, len(y))
 	for i := range y {
@@ -238,10 +275,14 @@ func (m *ARIMA) Forecast(h int) ([]float64, error) {
 	if err != nil {
 		return nil, err
 	}
-	// 2. integrate back to the original scale, undoing each level of differencing
-	//    from the innermost outward. For d == 0 this is a no-op.
+	// 2. integrate back to the original scale: undo regular differencing on the
+	//    seasonally-differenced scale, then undo seasonal differencing. Each loop
+	//    is a no-op when its order is 0.
 	for k := m.d - 1; k >= 0; k-- {
 		pred = Undifference(pred, m.anchors[k])
+	}
+	for k := m.bigD - 1; k >= 0; k-- {
+		pred = SeasonalUndifference(pred, m.seasonalAnchors[k])
 	}
 	return pred, nil
 }
