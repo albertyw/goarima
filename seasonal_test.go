@@ -56,6 +56,11 @@ func TestSeasonalStrengthBoundedZeroOne(t *testing.T) {
 	assert.LessOrEqual(t, fs, 1.0)
 }
 
+func TestVarianceShortReturnsZero(t *testing.T) {
+	assert.Equal(t, 0.0, variance(nil))
+	assert.Equal(t, 0.0, variance([]float64{5}))
+}
+
 func TestCenteredMovingAverageOddAndEven(t *testing.T) {
 	// On a pure linear trend the centered MA equals the series where defined.
 	series := []float64{1, 2, 3, 4, 5, 6, 7, 8}
