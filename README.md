@@ -86,6 +86,25 @@ forecast, err := model.Forecast(10)
 infinite value, and `Forecast` returns an error if the model has not been fitted
 yet.
 
+### Seasonal differencing
+
+For seasonal data with a known period `m`, add seasonal differencing
+`(1−Bᵐ)ᴰ`. `NewSARIMA` takes the seasonal differencing order `D` and period `m`;
+`AutoSARIMA` selects `D` (0 or 1, via the seasonal-strength test), then `d`, `p`,
+and `q` automatically:
+
+```go
+// Explicit: ARIMA(1,1,0)(0,1,0) with period 12.
+model, err := goarima.NewSARIMA(1, 1, 0, 1, 12) // p, d, q, D, m
+
+// Automatic: choose p, d, q, and D for a monthly (m=12) series.
+model, err := goarima.AutoSARIMA(series, 3, 1, 3, 12) // maxP, maxD, maxQ, m
+```
+
+`SeasonalOrders()` returns `(P, D, Q, m)`. Seasonal *AR/MA* terms (`P`, `Q`) are
+not yet implemented (they return as 0); `AutoSARIMA` accepts the same options as
+`AutoARIMA`.
+
 ### Coefficient refinement
 
 By default `Fit` uses the Hannan-Rissanen estimate. Two opt-in options refine it

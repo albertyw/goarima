@@ -22,7 +22,7 @@ CI (`.drone.yml`) runs `make test`, `make race`, `make cover`, `make benchmark`,
 
 ## Architecture
 
-Two entry points: construct a model with explicit orders via `NewARIMA(p,d,q)` + `Fit`, or let `AutoARIMA(series, maxP, maxD, maxQ)` choose the orders and return a fitted model. Both `Fit` and `AutoARIMA` are variadic in `FitOption`; `WithCSSRefinement()` enables the opt-in CSS refinement and `WithMLE()` the exact Gaussian MLE refinement (MLE takes precedence if both are passed). `Fit` and `AutoARIMA` reject a series containing NaN or ±Inf (`validateFinite`); `Forecast` errors until the model has been fitted (the `fitted` flag).
+Two entry points: construct a model with explicit orders via `NewARIMA(p,d,q)` + `Fit`, or let `AutoARIMA(series, maxP, maxD, maxQ)` choose the orders and return a fitted model. Seasonal *differencing* is available via `NewSARIMA(p,d,q,D,m)` and `AutoSARIMA(series, maxP, maxD, maxQ, m)` (seasonal AR/MA orders P,Q are a later phase — `SeasonalOrders()` returns them as 0). Both `Fit` and `AutoARIMA` are variadic in `FitOption`; `WithCSSRefinement()` enables the opt-in CSS refinement and `WithMLE()` the exact Gaussian MLE refinement (MLE takes precedence if both are passed). `Fit` and `AutoARIMA` reject a series containing NaN or ±Inf (`validateFinite`); `Forecast` errors until the model has been fitted (the `fitted` flag).
 
 The `ARIMA.Fit` pipeline (`goarima.go`):
 
@@ -41,9 +41,11 @@ Forecasting (`ARIMA.Forecast`) runs `forecastDiff` on the centered scale (rollin
 
 `AutoARIMA` (`autoarima.go` + `search.go`): `selectD` picks `d` with the KPSS level-stationarity test (`kpss.go`) — difference until the series tests stationary, up to maxD; then a search over `p,q` minimizes an information criterion (`score(crit, n, sigma2, p, q)` in `criterion.go`), skipping `(0,0)` and any fit that errors (non-stationary/non-invertible fits are rejected in `estimate.go`, see `stability.go`). The criterion defaults to AIC and is selectable with `WithCriterion(AIC|BIC|AICc)`. The search is an exhaustive grid by default; `WithStepwise()` switches to a Hyndman-Khandakar neighbor hill-climb (fewer fits, heuristic) and `WithParallel()` fits candidates concurrently (GOMAXPROCS workers, deterministic reduce — same result as serial, only faster when each fit is expensive, e.g. `WithMLE`). All three are `FitOption`s that only `AutoARIMA` reads; `Fit` ignores them.
 
+Seasonal differencing (`seasonal.go`, `diff.go`): `NewSARIMA(p,d,q,D,m)` adds the `(1−Bᵐ)ᴰ` operator. `Fit` applies seasonal differencing *first* (recording the last `m` values at each level in `seasonalAnchors`), then the existing regular-diff/center/estimate pipeline runs unchanged on the seasonally-differenced series `s`; `Forecast` undoes regular differencing then seasonal differencing (`SeasonalUndifference`). `AutoSARIMA` picks `D` (0 or 1) with the Wang-Smith-Hyndman seasonal-strength measure `Fs` (`selectSeasonalD`/`seasonalStrength`/`centeredMovingAverage` in `seasonal.go`, threshold 0.64, matching R `forecast::nsdiffs(test="seas")`), then `d` via KPSS on `s`, then `p,q` via the same `searchSpace` (which carries `bigD`/`period`). All `AutoARIMA` `FitOption`s thread through `AutoSARIMA` identically.
+
 Key files:
-- `goarima.go` — `ARIMA` struct, `NewARIMA`, `Fit`, `Forecast`/`forecastDiff`, getters, `mean`/`meanSquare`/`isConstant`.
-- `diff.go` — `Difference` / `Undifference`.
+- `goarima.go` — `ARIMA` struct (incl. `bigD`/`period`/`seasonalAnchors`), `NewARIMA`, `NewSARIMA`, `Fit`, `Forecast`/`forecastDiff`, getters (`Orders`/`SeasonalOrders`/…), `mean`/`meanSquare`/`isConstant`.
+- `diff.go` — `Difference` / `Undifference`, `SeasonalDifference` / `SeasonalUndifference`.
 - `estimate.go` — `hannanRissanen` (the ARMA estimator), `hrAROrder`, `armaResiduals`.
 - `refine.go` — `refineCoefficients` (the shared gonum Nelder-Mead helper) and `refineCSS`, the opt-in conditional-sum-of-squares refinement of the Hannan-Rissanen estimate.
 - `mle.go` — `refineMLE`, the opt-in exact Gaussian maximum-likelihood refinement (Kalman-filter likelihood, gonum Nelder-Mead).
@@ -51,9 +53,10 @@ Key files:
 - `stability.go` — `isStationary` / `isInvertible` (reflection-coefficient root test), used by the fit guards and the refinement penalty.
 - `kpss.go` — `kpssLevelStationary`, the KPSS level-stationarity test used by `selectD`.
 - `yulewalker.go` — autocovariance helpers and `solveYuleWalker` / `solveYuleWalkerFromAutocov` (used as the Hannan-Rissanen Stage 1 AR fit; guards constant series).
-- `autoarima.go` — `AutoARIMA`, `selectD` (order-search dispatch + final refit).
+- `autoarima.go` — `AutoARIMA`, `AutoSARIMA`, `selectD` (order-search dispatch + final refit).
+- `seasonal.go` — `selectSeasonalD` (seasonal-strength `Fs` test for D), `seasonalStrength`, `centeredMovingAverage`, `variance`.
 - `criterion.go` — `Criterion` (AIC/BIC/AICc) and `score`, the information criterion AutoARIMA minimizes.
-- `search.go` — `searchSpace`, `evalCandidate`/`evalBatch` (optionally parallel), `gridSearch`, and `stepwiseSearch` (Hyndman-Khandakar).
+- `search.go` — `searchSpace` (carries `bigD`/`period` for seasonal fits), `evalCandidate`/`evalBatch` (optionally parallel), `gridSearch`, and `stepwiseSearch` (Hyndman-Khandakar).
 
 By default, estimation is Hannan-Rissanen (pure linear algebra, no optimizer); `WithCSSRefinement()` adds a least-squares (CSS) refinement and `WithMLE()` an exact Gaussian maximum-likelihood refinement (Kalman filter, matching statsmodels' `method="statespace"`). The HR default and CSS refinement are approximate; MLE is the exact-likelihood fit, though small numeric differences from statsmodels remain.
 

@@ -291,7 +291,46 @@ expensive, e.g. under `WithMLE`).
 
 ---
 
-## 7. What this implementation is *not*
+## 7. Seasonal differencing (SARIMA)
+
+Many series repeat on a fixed period `m` (12 for monthly data with a yearly
+cycle, 4 for quarterly). A seasonal difference subtracts the value one season
+back,
+
+```
+(1 − Bᵐ) yₜ = yₜ − yₜ₋ₘ,
+```
+
+which removes a stable seasonal pattern just as the ordinary difference removes a
+trend. Applying it `D` times gives the operator `(1 − Bᵐ)ᴰ`. goarima applies the
+seasonal difference *first*, then the ordinary differencing/centering/estimation
+pipeline runs unchanged on the result — so the AR/MA machinery never has to know
+about seasonality. Forecasting integrates back the other way: undo the ordinary
+differencing, then add back each seasonal lag, using the last `m` observed values
+of each level as anchors (`SeasonalUndifference`).
+
+`NewSARIMA(p, d, q, D, m)` fits an explicit seasonal-differencing model.
+`AutoSARIMA(series, maxP, maxD, maxQ, m)` chooses `D` automatically with the
+**Wang-Smith-Hyndman seasonal-strength measure**
+
+```
+Fs = max(0, 1 − Var(remainder) / Var(detrended))   ∈ [0, 1],
+```
+
+computed from a classical decomposition (a centered moving-average trend, then
+per-season-index means as the seasonal component). When `Fs > 0.64` the season is
+strong enough to difference (`D = 1`, capped there); otherwise `D = 0`. This is
+the rule R's `forecast::nsdiffs(test="seas")` uses, and like KPSS for `d`, it
+avoids over-differencing a series that only looks seasonal because it trends.
+After `D` is fixed, `d` is chosen by KPSS on the seasonally-differenced series and
+`p, q` by the usual information-criterion search.
+
+Seasonal *AR/MA* terms — the multiplicative `Φ(Bᵐ)`, `Θ(Bᵐ)` polynomials — are a
+later phase; `SeasonalOrders()` reports them as 0 for now.
+
+---
+
+## 8. What this implementation is *not*
 
 goarima aims to be a clear, dependency-light, pure-Go ARIMA. It deliberately
 leaves out things a production statistics package would include:
@@ -303,14 +342,16 @@ leaves out things a production statistics package would include:
 - **Unstable fits are rejected, not repaired.** If an explicit `(p,d,q)` lands
   outside the stationary/invertible region, `Fit` returns an error instead of
   re-estimating into the valid region.
-- **No seasonal (SARIMA) terms**, and **point forecasts only** — no prediction
-  intervals.
+- **Seasonal differencing only, no seasonal AR/MA.** `NewSARIMA`/`AutoSARIMA`
+  handle the `(1−Bᵐ)ᴰ` operator (section 7), but the multiplicative seasonal
+  AR/MA polynomials are not yet implemented.
+- **Point forecasts only** — no prediction intervals.
 
 See the project README's *Limitations* section for the current list.
 
 ---
 
-## 8. Notation glossary
+## 9. Notation glossary
 
 | Symbol | Meaning |
 |---|---|

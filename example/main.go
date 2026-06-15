@@ -83,6 +83,27 @@ func runAuto(name string, series []float64, horizon int) {
 	report("goarima", name, model, horizon)
 }
 
+// runAutoSeasonal selects orders with AutoSARIMA for a known seasonal period and
+// prints them under a distinct [goarima-seasonal] label. compare.py parses only
+// the [goarima] blocks, so this extra block is ignored there.
+func runAutoSeasonal(name string, series []float64, period, horizon int) {
+	model, err := goarima.AutoSARIMA(series, 3, 1, 3, period)
+	if err != nil {
+		fmt.Printf("[goarima-seasonal] %s: %v\n", name, err)
+		return
+	}
+	p, d, q := model.Orders()
+	_, bigD, _, m := model.SeasonalOrders()
+	forecast, err := model.Forecast(horizon)
+	if err != nil {
+		fmt.Printf("[goarima-seasonal] %s: %v\n", name, err)
+		return
+	}
+	fmt.Printf("[goarima-seasonal] %s  ARIMA(%d,%d,%d)(0,%d,0)[%d]\n", name, p, d, q, bigD, m)
+	fmt.Printf("  phi:      %.4f\n", model.Phi())
+	fmt.Printf("  forecast: %.4f\n\n", forecast)
+}
+
 // mustParse parses an embedded dataset, exiting on the (unexpected) error.
 func mustParse(name, csv string) []float64 {
 	series, err := parseSeries(csv)
@@ -109,4 +130,8 @@ func main() {
 	runAuto("Sunspots", sunspots, 10)
 	runAuto("WoolyRnq", woolyrnq, 8)
 	runAuto("AustRes", austres, 8)
+
+	fmt.Println("# Seasonal AutoSARIMA order selection (goarima; m=12)")
+	fmt.Println()
+	runAutoSeasonal("AirPassengers", airPassengers, 12, 12)
 }

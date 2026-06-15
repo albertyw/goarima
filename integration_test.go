@@ -98,11 +98,23 @@ type refFit struct {
 	AIC      float64   `json:"aic"`
 }
 
+// refSeasonalFit is one fixed seasonal-order reference model from gen_reference.py.
+type refSeasonalFit struct {
+	Order         []int     `json:"order"`
+	SeasonalOrder []int     `json:"seasonal_order"`
+	Horizon       int       `json:"horizon"`
+	Phi           []float64 `json:"phi"`
+	Theta         []float64 `json:"theta"`
+	Forecast      []float64 `json:"forecast"`
+	AIC           float64   `json:"aic"`
+}
+
 // refFixture is the whole committed pmdarima_reference.json document.
 type refFixture struct {
-	Meta  map[string]string `json:"_meta"`
-	Fixed map[string]refFit `json:"fixed"`
-	Auto  map[string]refFit `json:"auto"`
+	Meta          map[string]string         `json:"_meta"`
+	Fixed         map[string]refFit         `json:"fixed"`
+	Auto          map[string]refFit         `json:"auto"`
+	SeasonalFixed map[string]refSeasonalFit `json:"seasonal_fixed"`
 }
 
 // loadReference parses the embedded pmdarima fixture (no Python at test time).
@@ -359,6 +371,37 @@ func TestAutoARIMASunspotsNotOverDifferenced(t *testing.T) {
 		}
 	}
 	assert.Positive(t, max)
+}
+
+// TestSeasonalFixedOrderMatchesPmdarima checks goarima's seasonal differencing
+// against statsmodels at a fixed seasonal order. The fit is pure-AR (q==0), so
+// phi is identifiable and compared directly; the d>=1 forecast level differs by
+// the drift goarima adds (the Phase 15 gap), so it is only checked finite.
+func TestSeasonalFixedOrderMatchesPmdarima(t *testing.T) {
+	ref := loadReference(t)
+	series := referenceSeries(t)
+	for name, fix := range ref.SeasonalFixed {
+		t.Run(name, func(t *testing.T) {
+			p, d, q := fix.Order[0], fix.Order[1], fix.Order[2]
+			bigP, bigD, bigQ, m := fix.SeasonalOrder[0], fix.SeasonalOrder[1], fix.SeasonalOrder[2], fix.SeasonalOrder[3]
+			require.Equal(t, 0, bigP, "fixture has no seasonal AR (14a)")
+			require.Equal(t, 0, bigQ, "fixture has no seasonal MA (14a)")
+
+			model, err := goarima.NewSARIMA(p, d, q, bigD, m)
+			require.NoError(t, err)
+			require.NoError(t, model.Fit(series[name], goarima.WithMLE()))
+
+			if q == 0 && p > 0 {
+				assertCoeffsClose(t, "phi", fix.Phi, model.Phi(), 0.05)
+			}
+
+			fc, err := model.Forecast(fix.Horizon)
+			require.NoError(t, err)
+			for _, v := range fc {
+				require.False(t, math.IsNaN(v) || math.IsInf(v, 0))
+			}
+		})
+	}
 }
 
 // --- Tier 3: goarima golden baseline (regression guard) ---
