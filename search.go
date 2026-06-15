@@ -10,11 +10,12 @@ import (
 // AutoARIMA order search. d is fixed (chosen by selectD); the search ranges over
 // p in 0..maxP and q in 0..maxQ.
 type searchSpace struct {
-	series     []float64
-	d, n       int
-	maxP, maxQ int
-	crit       Criterion
-	opts       []FitOption
+	series       []float64
+	d, n         int
+	maxP, maxQ   int
+	bigD, period int // seasonal differencing order and period; period < 2 => non-seasonal
+	crit         Criterion
+	opts         []FitOption
 }
 
 // candidate is the cached outcome of fitting one (p,q): its criterion score and
@@ -24,9 +25,10 @@ type candidate struct {
 	ok    bool
 }
 
-// evalCandidate fits NewARIMA(p,d,q).Fit(series, opts…) and returns its criterion
-// score. ok is false when (p,q) is out of bounds, is (0,0), or the fit fails
-// (e.g. non-stationary/non-invertible, too few observations).
+// evalCandidate fits the (p,d,q) model (seasonal NewSARIMA when period >= 2, else
+// NewARIMA) with Fit(series, opts…) and returns its criterion score. ok is false
+// when (p,q) is out of bounds, is (0,0), or the fit fails (e.g.
+// non-stationary/non-invertible, too few observations).
 func (s searchSpace) evalCandidate(p, q int) candidate {
 	if p < 0 || q < 0 || p > s.maxP || q > s.maxQ {
 		return candidate{ok: false}
@@ -34,7 +36,15 @@ func (s searchSpace) evalCandidate(p, q int) candidate {
 	if p == 0 && q == 0 {
 		return candidate{ok: false}
 	}
-	model, err := NewARIMA(p, s.d, q)
+	var (
+		model *ARIMA
+		err   error
+	)
+	if s.period >= 2 {
+		model, err = NewSARIMA(p, s.d, q, s.bigD, s.period)
+	} else {
+		model, err = NewARIMA(p, s.d, q)
+	}
 	if err != nil {
 		return candidate{ok: false}
 	}

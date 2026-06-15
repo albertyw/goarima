@@ -2,6 +2,7 @@ package goarima
 
 import (
 	"math"
+	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -290,4 +291,59 @@ func TestARIMA(t *testing.T) {
 	assert.Equal(t, 13.0, forecast[2])
 	assert.Equal(t, 14.0, forecast[3])
 	assert.Equal(t, 15.0, forecast[4])
+}
+
+func TestNewSARIMARejectsSeasonalPeriodBelowTwo(t *testing.T) {
+	_, err := NewSARIMA(1, 0, 0, 1, 1) // D>0 but m<2
+	require.Error(t, err)
+}
+
+func TestNewSARIMARejectsAllZeroOrders(t *testing.T) {
+	_, err := NewSARIMA(0, 0, 0, 0, 0)
+	require.Error(t, err)
+}
+
+func TestNewARIMAStillWorks(t *testing.T) {
+	m, err := NewARIMA(1, 1, 0)
+	require.NoError(t, err)
+	p, d, q := m.Orders()
+	assert.Equal(t, [3]int{1, 1, 0}, [3]int{p, d, q})
+	_, D, _, period := m.SeasonalOrders()
+	assert.Equal(t, 0, D)
+	assert.Equal(t, 0, period)
+}
+
+func TestSeasonalRandomWalkForecastRepeatsSeason(t *testing.T) {
+	// A pure seasonal random walk x_t = x_{t-m} + e: with (0,0,0)(0,1,0)_m the
+	// h-step forecast equals the last observed full season, repeated.
+	m := 4
+	r := rand.New(rand.NewSource(7))
+	x := []float64{10, 20, 30, 40} // first season
+	for i := 4; i < 40; i++ {
+		x = append(x, x[i-m]+0.001*r.NormFloat64())
+	}
+	model, err := NewSARIMA(0, 0, 0, 1, m)
+	require.NoError(t, err)
+	require.NoError(t, model.Fit(x))
+	fc, err := model.Forecast(m)
+	require.NoError(t, err)
+	for i := 0; i < m; i++ {
+		assert.InDelta(t, x[len(x)-m+i], fc[i], 0.5)
+	}
+}
+
+func TestCombinedRegularAndSeasonalForecastFinite(t *testing.T) {
+	m := 12
+	series := make([]float64, 0, 60)
+	for i := 0; i < 60; i++ {
+		series = append(series, float64(i)+10*float64(i%m))
+	}
+	model, err := NewSARIMA(1, 1, 0, 1, m)
+	require.NoError(t, err)
+	require.NoError(t, model.Fit(series))
+	fc, err := model.Forecast(12)
+	require.NoError(t, err)
+	for _, v := range fc {
+		assert.False(t, math.IsNaN(v) || math.IsInf(v, 0))
+	}
 }

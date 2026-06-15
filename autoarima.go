@@ -71,6 +71,72 @@ func AutoARIMA(series []float64, maxP, maxD, maxQ int, opts ...FitOption) (*ARIM
 	return best, nil
 }
 
+// AutoSARIMA selects seasonal ARIMA orders automatically for a known seasonal
+// period m (m >= 2) and returns a fitted model. It chooses the seasonal
+// differencing order D (0 or 1) with the seasonal-strength measure, then the
+// regular differencing order d with the KPSS test on the seasonally-differenced
+// series, then the non-seasonal orders p and q with the same search AutoARIMA
+// uses (grid by default; WithStepwise / WithParallel honored). In this version
+// the seasonal AR and MA orders P and Q are always 0 (deferred to a later phase).
+//
+// The criterion defaults to AIC (WithCriterion to change it). Any FitOption
+// (WithCSSRefinement, WithMLE) is threaded through to every candidate fit and
+// the final refit, exactly as in AutoARIMA.
+func AutoSARIMA(series []float64, maxP, maxD, maxQ, m int, opts ...FitOption) (*ARIMA, error) {
+	if maxP < 0 || maxD < 0 || maxQ < 0 {
+		return nil, errors.New("AutoSARIMA: max orders must be non-negative")
+	}
+	if m < 2 {
+		return nil, errors.New("AutoSARIMA: seasonal period m must be at least 2")
+	}
+	if len(series) < 2 {
+		return nil, errors.New("AutoSARIMA: series too short")
+	}
+	if err := validateFinite(series); err != nil {
+		return nil, fmt.Errorf("AutoSARIMA: %w", err)
+	}
+
+	var cfg fitConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	bigD := selectSeasonalD(series, m)
+	s := SeasonalDifference(series, m, bigD)
+	d := selectD(s, maxD)
+
+	space := searchSpace{
+		series: series,
+		d:      d,
+		n:      len(series) - bigD*m - d, // differenced length, common to all (p,q)
+		maxP:   maxP,
+		maxQ:   maxQ,
+		bigD:   bigD,
+		period: m,
+		crit:   cfg.criterion,
+		opts:   opts,
+	}
+
+	var bestP, bestQ int
+	if cfg.stepwise {
+		bestP, bestQ = space.stepwiseSearch(cfg.parallel)
+	} else {
+		bestP, bestQ = space.gridSearch(cfg.parallel)
+	}
+	if bestP < 0 {
+		return nil, errors.New("AutoSARIMA: no candidate model could be fit")
+	}
+
+	best, err := NewSARIMA(bestP, d, bestQ, bigD, m)
+	if err != nil {
+		return nil, err
+	}
+	if err := best.Fit(series, opts...); err != nil {
+		return nil, err
+	}
+	return best, nil
+}
+
 // selectD chooses the differencing order with the KPSS stationarity test: it
 // differences the series until it tests level-stationary, up to maxD, and
 // returns that order. This avoids the over-differencing that a variance

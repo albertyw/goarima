@@ -55,6 +55,12 @@ AUTO = [
     ("Sunspots", load("sunspots.csv"), (5, 2, 5), 10),
 ]
 
+# Fixed seasonal-differencing examples (SARIMA with seasonal_order (0,D,0,m)).
+# Exercises goarima's seasonal differencing/integration against statsmodels.
+SEASONAL_FIXED = [
+    ("AirPassengers", load("airpassengers.csv"), (1, 1, 0), (0, 1, 0, 12), 12),
+]
+
 
 def fixed_fit(series: list[float], order: tuple, horizon: int) -> dict:
     """Fit a fixed-order pmdarima model and capture coefficients + forecast."""
@@ -94,6 +100,21 @@ def auto_fit(series: list[float], maxes: tuple, horizon: int) -> dict:
     }
 
 
+def seasonal_fit(series, order, seasonal_order, horizon):
+    """Fit a fixed seasonal-order pmdarima model; capture phi + forecast."""
+    model = pm.ARIMA(order=order, seasonal_order=seasonal_order, suppress_warnings=True)
+    model.fit(series)
+    return {
+        "order": list(order),
+        "seasonal_order": list(seasonal_order),
+        "horizon": horizon,
+        "phi": np.atleast_1d(model.arparams()).tolist(),
+        "theta": np.atleast_1d(model.maparams()).tolist(),
+        "forecast": np.asarray(model.predict(n_periods=horizon)).tolist(),
+        "aic": float(model.aic()),
+    }
+
+
 def main() -> None:
     fixtures = {
         "_meta": {
@@ -105,6 +126,9 @@ def main() -> None:
         },
         "fixed": {name: fixed_fit(s, o, h) for name, s, o, h in FIXED},
         "auto": {name: auto_fit(s, m, h) for name, s, m, h in AUTO},
+        "seasonal_fixed": {
+            name: seasonal_fit(s, o, so, h) for name, s, o, so, h in SEASONAL_FIXED
+        },
     }
     os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
     with open(OUT_PATH, "w") as handle:
