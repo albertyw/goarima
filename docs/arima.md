@@ -325,7 +325,12 @@ avoids over-differencing a series that only looks seasonal because it trends.
 After `D` is fixed, `d` is chosen by KPSS on the seasonally-differenced series and
 `p, q` by the usual information-criterion search.
 
-Seasonal *AR/MA* terms — the multiplicative `Φ(Bᵐ)`, `Θ(Bᵐ)` polynomials — are a
+This seasonal model is the differencing half of the **SARIMA**
+`(p, d, q)(P, D, Q)ₘ` family. goarima validates it against statsmodels'
+**SARIMAX** class (Seasonal ARIMA with eXogenous regressors) — the reference the
+integration suite fits at `seasonal_order=(0, D, 0, m)` — which reduces to plain
+seasonal ARIMA when, as here, there are no exogenous regressors. The seasonal
+`AR/MA` terms `P` and `Q` (the multiplicative `Φ(Bᵐ)`, `Θ(Bᵐ)` polynomials) are a
 later phase; `SeasonalOrders()` reports them as 0 for now.
 
 ---
@@ -397,3 +402,6 @@ Reference / deeper:
 - **statsmodels ARIMA** (the maximum-likelihood reference this project compares
   against):
   <https://www.statsmodels.org/stable/generated/statsmodels.tsa.arima.model.ARIMA.html>
+- **statsmodels SARIMAX** (the seasonal reference for `NewSARIMA`/`AutoSARIMA`,
+  fit at `seasonal_order=(0, D, 0, m)`):
+  <https://www.statsmodels.org/stable/generated/statsmodels.tsa.statespace.sarimax.SARIMAX.html>

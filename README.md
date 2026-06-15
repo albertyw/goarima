@@ -7,7 +7,8 @@
 ![Sunspots forecast comparison](docs/images/sunspots.png)
 
 A pure-Go implementation of ARIMA (AutoRegressive Integrated Moving Average)
-time-series modeling, with automatic order selection.
+time-series modeling, with automatic order selection and seasonal differencing
+(SARIMA, validated against statsmodels SARIMAX).
 
 It fits and forecasts ARIMA(p, d, q) models. By default, coefficients are
 estimated with the Hannan-Rissanen method (pure linear algebra), so fitting is
@@ -101,7 +102,10 @@ model, err := goarima.NewSARIMA(1, 1, 0, 1, 12) // p, d, q, D, m
 model, err := goarima.AutoSARIMA(series, 3, 1, 3, 12) // maxP, maxD, maxQ, m
 ```
 
-`SeasonalOrders()` returns `(P, D, Q, m)`. Seasonal *AR/MA* terms (`P`, `Q`) are
+`SeasonalOrders()` returns `(P, D, Q, m)`. This is the differencing half of the
+SARIMA `(p,d,q)(P,D,Q)ₘ` family; it is validated against statsmodels'
+[SARIMAX](https://www.statsmodels.org/stable/generated/statsmodels.tsa.statespace.sarimax.SARIMAX.html)
+class (fit at `seasonal_order=(0,D,0,m)`). Seasonal *AR/MA* terms (`P`, `Q`) are
 not yet implemented (they return as 0); `AutoSARIMA` accepts the same options as
 `AutoARIMA`.
 
@@ -214,7 +218,8 @@ wineind's near-unit-root (3,1,3) the amplitudes can still differ).
 
 ## Limitations
 
-This is an approximate, non-seasonal implementation. In particular:
+This is an approximate implementation with seasonal *differencing* but not yet
+seasonal AR/MA. In particular:
 
 - **Approximate by default.** The default Hannan-Rissanen fit is close to, but
   not identical to, statsmodels' default. The optional `WithMLE` refinement adds
@@ -223,8 +228,10 @@ This is an approximate, non-seasonal implementation. In particular:
 - **Non-invertible/non-stationary fixed-order fits are rejected, not repaired.**
   `Fit` returns an error rather than estimating into the valid region, so some
   explicit `(p,d,q)` requests fail instead of producing a model.
-- **No seasonal (SARIMA) terms** and **point forecasts only** (no prediction
-  intervals).
+- **Seasonal differencing only.** `NewSARIMA`/`AutoSARIMA` handle the SARIMA
+  `(1−Bᵐ)ᴰ` operator (validated against statsmodels SARIMAX), but the
+  multiplicative seasonal AR/MA polynomials `(P, Q)` are not yet implemented.
+- **Point forecasts only** (no prediction intervals).
 
 ## Development
 
@@ -241,9 +248,12 @@ make charts    # trend-comparison charts -> example/charts/ (gitignored; needs e
 `integration_test.go` (in the external `goarima_test` package, so it uses only
 the exported API) compares goarima against committed reference fixtures — no
 network or Python at test time. It checks fixed-order fits and `auto_arima`
-selection against [pmdarima](https://alkaline-ml.com/pmdarima/), analytic
-closed-forms, and a goarima golden baseline. Regenerate the fixtures (needs the
-`example/env` venv) when goarima's numerics intentionally change:
+selection against [pmdarima](https://alkaline-ml.com/pmdarima/), a seasonal
+`NewSARIMA` fit against statsmodels
+[SARIMAX](https://www.statsmodels.org/stable/generated/statsmodels.tsa.statespace.sarimax.SARIMAX.html),
+analytic closed-forms, and a goarima golden baseline (including an `AutoSARIMA`
+lock). Regenerate the fixtures (needs the `example/env` venv) when goarima's
+numerics intentionally change:
 
 ```sh
 cd example && env/bin/python gen_reference.py   # pmdarima reference fixtures
