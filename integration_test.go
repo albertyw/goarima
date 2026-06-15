@@ -416,10 +416,44 @@ type goldenFit struct {
 	Sigma2   float64   `json:"sigma2"`
 }
 
+// goldenAutoSeasonalFit captures one AutoSARIMA result (selection + fit) as a
+// regression lock; values are goarima's own default (HR) output.
+type goldenAutoSeasonalFit struct {
+	Max           []int     `json:"max"`            // [maxP, maxD, maxQ]
+	Period        int       `json:"period"`         // seasonal period m
+	Order         []int     `json:"order"`          // selected p, d, q
+	SeasonalOrder []int     `json:"seasonal_order"` // selected P, D, Q, m
+	Horizon       int       `json:"horizon"`
+	Phi           []float64 `json:"phi"`
+	Theta         []float64 `json:"theta"`
+	Forecast      []float64 `json:"forecast"`
+	Sigma2        float64   `json:"sigma2"`
+}
+
 // goldenFixture is the whole committed goarima_golden.json document.
 type goldenFixture struct {
-	Meta map[string]string    `json:"_meta"`
-	Fits map[string]goldenFit `json:"fits"`
+	Meta         map[string]string                `json:"_meta"`
+	Fits         map[string]goldenFit             `json:"fits"`
+	AutoSeasonal map[string]goldenAutoSeasonalFit `json:"auto_seasonal,omitempty"`
+}
+
+// autoSeasonalCases drives the seasonal AutoSARIMA golden baseline. Series are
+// looked up by name in referenceSeries.
+var autoSeasonalCases = []struct {
+	Name                              string
+	MaxP, MaxD, MaxQ, Period, Horizon int
+}{
+	{"AirPassengers", 3, 1, 3, 12, 12},
+}
+
+// fitGoldenAutoSeasonal runs AutoSARIMA and returns the fitted model + forecast.
+func fitGoldenAutoSeasonal(t *testing.T, s []float64, maxP, maxD, maxQ, period, horizon int) (*goarima.ARIMA, []float64) {
+	t.Helper()
+	model, err := goarima.AutoSARIMA(s, maxP, maxD, maxQ, period)
+	require.NoError(t, err)
+	forecast, err := model.Forecast(horizon)
+	require.NoError(t, err)
+	return model, forecast
 }
 
 const goldenPath = "testdata/goarima_golden.json"
@@ -479,6 +513,41 @@ func TestGoldenWithMLE(t *testing.T) {
 	}
 }
 
+// TestGoldenAutoSeasonalSelection pins AutoSARIMA's whole seasonal pipeline
+// (selected order + coefficients + forecast + sigma2) to the committed baseline.
+// The fixture is rewritten by TestGoldenWithMLE -update, so this test only
+// asserts. Regenerate with: go test -run TestGoldenWithMLE -update
+func TestGoldenAutoSeasonalSelection(t *testing.T) {
+	if *updateGolden {
+		return // the golden file is rewritten by TestGoldenWithMLE -update
+	}
+	series := referenceSeries(t)
+	var golden goldenFixture
+	require.NoError(t, json.Unmarshal(goarimaGoldenJSON, &golden))
+
+	for _, c := range autoSeasonalCases {
+		t.Run(c.Name, func(t *testing.T) {
+			want, ok := golden.AutoSeasonal[c.Name]
+			require.Truef(t, ok, "no auto-seasonal golden for %s (run TestGoldenWithMLE -update)", c.Name)
+
+			model, forecast := fitGoldenAutoSeasonal(t, series[c.Name], c.MaxP, c.MaxD, c.MaxQ, c.Period, c.Horizon)
+			p, d, q := model.Orders()
+			bigP, bigD, bigQ, m := model.SeasonalOrders()
+			assert.Equal(t, want.Order, []int{p, d, q}, "selected order")
+			assert.Equal(t, want.SeasonalOrder, []int{bigP, bigD, bigQ, m}, "selected seasonal order")
+			assertCoeffsClose(t, "phi", want.Phi, model.Phi(), goldenCoeffTol)
+			assertCoeffsClose(t, "theta", want.Theta, model.Theta(), goldenCoeffTol)
+			assertForecastClose(t, want.Forecast, forecast, goldenRelTol)
+
+			scale := math.Abs(want.Sigma2)
+			if scale < 1 {
+				scale = 1
+			}
+			assert.InDelta(t, want.Sigma2, model.Sigma2(), goldenRelTol*scale)
+		})
+	}
+}
+
 // writeGolden refits every fixed case and rewrites the golden fixture. Only
 // reached under -update, so normal `go test` runs never touch the filesystem.
 func writeGolden(t *testing.T, ref refFixture, series map[string][]float64) {
@@ -495,9 +564,27 @@ func writeGolden(t *testing.T, ref refFixture, series map[string][]float64) {
 			Sigma2:   model.Sigma2(),
 		}
 	}
+	autoSeasonal := make(map[string]goldenAutoSeasonalFit, len(autoSeasonalCases))
+	for _, c := range autoSeasonalCases {
+		model, forecast := fitGoldenAutoSeasonal(t, series[c.Name], c.MaxP, c.MaxD, c.MaxQ, c.Period, c.Horizon)
+		p, d, q := model.Orders()
+		bigP, bigD, bigQ, m := model.SeasonalOrders()
+		autoSeasonal[c.Name] = goldenAutoSeasonalFit{
+			Max:           []int{c.MaxP, c.MaxD, c.MaxQ},
+			Period:        c.Period,
+			Order:         []int{p, d, q},
+			SeasonalOrder: []int{bigP, bigD, bigQ, m},
+			Horizon:       c.Horizon,
+			Phi:           model.Phi(),
+			Theta:         model.Theta(),
+			Forecast:      forecast,
+			Sigma2:        model.Sigma2(),
+		}
+	}
 	out := goldenFixture{
-		Meta: map[string]string{"generator": "go test -run TestGoldenWithMLE -update"},
-		Fits: fits,
+		Meta:         map[string]string{"generator": "go test -run TestGoldenWithMLE -update"},
+		Fits:         fits,
+		AutoSeasonal: autoSeasonal,
 	}
 	data, err := json.MarshalIndent(out, "", "  ")
 	require.NoError(t, err)
