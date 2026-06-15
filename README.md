@@ -216,6 +216,17 @@ wineind's near-unit-root (3,1,3) the amplitudes can still differ).
 |---|---|
 | ![Wool Production forecast comparison](docs/images/woolyrnq.png) | ![AirPassengers forecast comparison](docs/images/airpassengers.png) |
 
+### Seasonal forecasting (SARIMAX)
+
+[`docs/examples.md`](docs/examples.md) shows two worked seasonal examples —
+AirPassengers and WineInd — comparing goarima's `AutoSARIMA` against statsmodels
+**SARIMAX** at the same orders, with the charts inline and the exact settings used
+to generate them (`example/plot_seasonal.py`).
+
+| AirPassengers — goarima AutoSARIMA vs statsmodels SARIMAX | WineInd — goarima AutoSARIMA vs statsmodels SARIMAX |
+|---|---|
+| ![AirPassengers seasonal forecast](docs/images/airpassengers_seasonal.png) | ![WineInd seasonal forecast](docs/images/wineind_seasonal.png) |
+
 ## Limitations
 
 This is an approximate implementation with seasonal *differencing* but not yet

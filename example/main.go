@@ -133,5 +133,6 @@ func main() {
 
 	fmt.Println("# Seasonal AutoSARIMA order selection (goarima; m=12)")
 	fmt.Println()
-	runAutoSeasonal("AirPassengers", airPassengers, 12, 12)
+	runAutoSeasonal("AirPassengers", airPassengers, 12, 24)
+	runAutoSeasonal("WineInd", wineind, 12, 24)
 }

@@ -42,4 +42,4 @@ example:
 
 .PHONY:charts
 charts:
-	cd example && if [ -x env/bin/python ]; then env/bin/python plot_compare.py; else echo "no example/env; install matplotlib in example/env to generate charts"; fi
+	cd example && if [ -x env/bin/python ]; then env/bin/python plot_compare.py && env/bin/python plot_seasonal.py; else echo "no example/env; install matplotlib in example/env to generate charts"; fi
