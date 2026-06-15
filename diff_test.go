@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDifference(t *testing.T) {
@@ -43,4 +44,34 @@ func TestDifferenceUndifferenceRoundTrip(t *testing.T) {
 	diff := Difference(series, 1)
 	got := Undifference(diff, series[0])
 	assert.Equal(t, series[1:], got)
+}
+
+func TestSeasonalDifferenceUndifferenceRoundTrip(t *testing.T) {
+	// One pass of lag-m differencing then undifferencing recovers the tail.
+	y := []float64{3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8}
+	m := 4
+	w := SeasonalDifference(y, m, 1)
+	require.Len(t, w, len(y)-m)
+	got := SeasonalUndifference(w, y[:m]) // anchor = the first m values
+	assert.InDeltaSlice(t, y[m:], got, 1e-9)
+}
+
+func TestSeasonalDifferenceDZeroReturnsCopy(t *testing.T) {
+	y := []float64{1, 2, 3}
+	got := SeasonalDifference(y, 4, 0)
+	assert.Equal(t, y, got)
+	got[0] = 99
+	assert.Equal(t, 1.0, y[0], "must be a copy, not an alias")
+}
+
+func TestSeasonalDifferenceTwoPasses(t *testing.T) {
+	y := []float64{1, 2, 3, 4, 5, 6, 7, 8, 9}
+	m := 2
+	once := SeasonalDifference(y, m, 1)
+	twice := SeasonalDifference(once, m, 1)
+	assert.Equal(t, twice, SeasonalDifference(y, m, 2))
+}
+
+func TestSeasonalDifferenceTooShortReturnsEmpty(t *testing.T) {
+	assert.Empty(t, SeasonalDifference([]float64{1, 2}, 4, 1))
 }

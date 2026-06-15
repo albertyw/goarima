@@ -29,3 +29,42 @@ func Undifference(diffPred []float64, lastOrig float64) []float64 {
 	}
 	return res
 }
+
+// SeasonalDifference applies D passes of lag-m differencing to y, returning a
+// series of length len(y)-D*m. Each pass replaces y_t with y_t - y_{t-m}. A pass
+// on a series of length <= m returns an empty slice. D == 0 returns a copy.
+func SeasonalDifference(y []float64, m, D int) []float64 {
+	res := make([]float64, len(y))
+	copy(res, y)
+	for k := 0; k < D; k++ {
+		if len(res) <= m {
+			return []float64{}
+		}
+		tmp := make([]float64, len(res)-m)
+		for i := 0; i < len(res)-m; i++ {
+			tmp[i] = res[i+m] - res[i]
+		}
+		res = tmp
+	}
+	return res
+}
+
+// SeasonalUndifference reverses one pass of lag-m seasonal differencing by adding
+// each value of diffPred to the value m steps earlier. anchor holds the last m
+// values on the pre-difference scale in chronological order (oldest first): the
+// first m results integrate onto anchor, later ones onto earlier results. The
+// seasonal period m is len(anchor).
+func SeasonalUndifference(diffPred, anchor []float64) []float64 {
+	m := len(anchor)
+	res := make([]float64, len(diffPred))
+	for i := range diffPred {
+		var prev float64
+		if i < m {
+			prev = anchor[i]
+		} else {
+			prev = res[i-m]
+		}
+		res[i] = diffPred[i] + prev
+	}
+	return res
+}
