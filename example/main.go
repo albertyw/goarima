@@ -104,6 +104,34 @@ func runAutoSeasonal(name string, series []float64, period, horizon int) {
 	fmt.Printf("  forecast: %.4f\n\n", forecast)
 }
 
+// runAutoInterval selects orders with AutoARIMA, refits with exact MLE (as
+// runAuto does), then prints the point forecast together with a 95% prediction
+// interval under a distinct [goarima-interval] label. compare.py parses only the
+// [goarima] blocks, so this extra block is ignored there; plot_interval.py reads it.
+func runAutoInterval(name string, series []float64, horizon int) {
+	const level = 0.95
+	model, err := goarima.AutoARIMA(series, 5, 2, 5)
+	if err != nil {
+		fmt.Printf("[goarima-interval] %s: %v\n", name, err)
+		return
+	}
+	p, d, q := model.Orders()
+	if refined, rerr := goarima.NewARIMA(p, d, q); rerr == nil {
+		if ferr := refined.Fit(series, goarima.WithMLE()); ferr == nil {
+			model = refined // keep the HR fit if MLE refinement fails
+		}
+	}
+	fc, err := model.ForecastInterval(horizon, level)
+	if err != nil {
+		fmt.Printf("[goarima-interval] %s: %v\n", name, err)
+		return
+	}
+	fmt.Printf("[goarima-interval] %s  ARIMA(%d,%d,%d)  level=%.2f\n", name, p, d, q, level)
+	fmt.Printf("  forecast: %.4f\n", fc.Point)
+	fmt.Printf("  lower:    %.4f\n", fc.Lower)
+	fmt.Printf("  upper:    %.4f\n\n", fc.Upper)
+}
+
 // mustParse parses an embedded dataset, exiting on the (unexpected) error.
 func mustParse(name, csv string) []float64 {
 	series, err := parseSeries(csv)
@@ -135,4 +163,9 @@ func main() {
 	fmt.Println()
 	runAutoSeasonal("AirPassengers", airPassengers, 12, 24)
 	runAutoSeasonal("WineInd", wineind, 12, 24)
+
+	fmt.Println("# Prediction intervals (goarima; 95% level)")
+	fmt.Println()
+	runAutoInterval("AirPassengers", airPassengers, 24)
+	runAutoInterval("Lynx", lynx, 20)
 }
