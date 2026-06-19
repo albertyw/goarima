@@ -104,32 +104,57 @@ func runAutoSeasonal(name string, series []float64, period, horizon int) {
 	fmt.Printf("  forecast: %.4f\n\n", forecast)
 }
 
-// runAutoInterval selects orders with AutoARIMA, refits with exact MLE (as
-// runAuto does), then prints the point forecast together with a 95% prediction
-// interval under a distinct [goarima-interval] label. compare.py parses only the
-// [goarima] blocks, so this extra block is ignored there; plot_interval.py reads it.
-func runAutoInterval(name string, series []float64, horizon int) {
-	const level = 0.95
+// fitAutoMLE selects orders with AutoARIMA and refits them with exact MLE (as
+// runAuto does), returning the model and its "ARIMA(p,d,q)" label.
+func fitAutoMLE(series []float64) (*goarima.ARIMA, string, error) {
 	model, err := goarima.AutoARIMA(series, 5, 2, 5)
 	if err != nil {
-		fmt.Printf("[goarima-interval] %s: %v\n", name, err)
-		return
+		return nil, "", err
 	}
 	p, d, q := model.Orders()
 	if refined, rerr := goarima.NewARIMA(p, d, q); rerr == nil {
-		if ferr := refined.Fit(series, goarima.WithMLE()); ferr == nil {
+		if refined.Fit(series, goarima.WithMLE()) == nil {
 			model = refined // keep the HR fit if MLE refinement fails
 		}
 	}
-	fc, err := model.ForecastInterval(horizon, level)
+	return model, fmt.Sprintf("ARIMA(%d,%d,%d)", p, d, q), nil
+}
+
+// fitAutoSeasonalMLE is fitAutoMLE's seasonal counterpart, via AutoSARIMA.
+func fitAutoSeasonalMLE(series []float64, period int) (*goarima.ARIMA, string, error) {
+	model, err := goarima.AutoSARIMA(series, 3, 1, 3, period)
 	if err != nil {
-		fmt.Printf("[goarima-interval] %s: %v\n", name, err)
-		return
+		return nil, "", err
 	}
-	fmt.Printf("[goarima-interval] %s  ARIMA(%d,%d,%d)  level=%.2f\n", name, p, d, q, level)
-	fmt.Printf("  forecast: %.4f\n", fc.Point)
-	fmt.Printf("  lower:    %.4f\n", fc.Lower)
-	fmt.Printf("  upper:    %.4f\n\n", fc.Upper)
+	p, d, q := model.Orders()
+	_, bigD, _, m := model.SeasonalOrders()
+	if refined, rerr := goarima.NewSARIMA(p, d, q, bigD, m); rerr == nil {
+		if refined.Fit(series, goarima.WithMLE()) == nil {
+			model = refined
+		}
+	}
+	return model, fmt.Sprintf("ARIMA(%d,%d,%d)(0,%d,0)[%d]", p, d, q, bigD, m), nil
+}
+
+// printInterval prints one [goarima-interval] block: a key identifying the band,
+// the model's order label, the point forecast, and a lower@L / upper@L pair for
+// each requested confidence level. compare.py parses only the [goarima] blocks,
+// so these are ignored there; plot_interval.py reads them.
+func printInterval(key, orderLabel string, model *goarima.ARIMA, horizon int, levels ...float64) {
+	fmt.Printf("[goarima-interval] %s  %s\n", key, orderLabel)
+	for i, level := range levels {
+		fc, err := model.ForecastInterval(horizon, level)
+		if err != nil {
+			fmt.Printf("  error: %v\n\n", err)
+			return
+		}
+		if i == 0 {
+			fmt.Printf("  forecast: %.4f\n", fc.Point)
+		}
+		fmt.Printf("  lower@%.2f: %.4f\n", level, fc.Lower)
+		fmt.Printf("  upper@%.2f: %.4f\n", level, fc.Upper)
+	}
+	fmt.Println()
 }
 
 // mustParse parses an embedded dataset, exiting on the (unexpected) error.
@@ -164,8 +189,18 @@ func main() {
 	runAutoSeasonal("AirPassengers", airPassengers, 12, 24)
 	runAutoSeasonal("WineInd", wineind, 12, 24)
 
-	fmt.Println("# Prediction intervals (goarima; 95% level)")
+	fmt.Println("# Prediction intervals (goarima)")
 	fmt.Println()
-	runAutoInterval("AirPassengers", airPassengers, 24)
-	runAutoInterval("Lynx", lynx, 20)
+	// Lesson 1: a model that captures the seasonal structure has a smaller
+	// residual variance, so its (still correctly calibrated) 95% band is tighter.
+	if m, label, err := fitAutoMLE(airPassengers); err == nil {
+		printInterval("AirPassengers-nonseasonal", label, m, 24, 0.95)
+	}
+	if m, label, err := fitAutoSeasonalMLE(airPassengers, 12); err == nil {
+		printInterval("AirPassengers-seasonal", label, m, 24, 0.95)
+	}
+	// Lesson 2: a lower confidence level narrows the band (z shrinks).
+	if m, label, err := fitAutoMLE(lynx); err == nil {
+		printInterval("Lynx", label, m, 20, 0.80, 0.95)
+	}
 }

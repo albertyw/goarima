@@ -258,13 +258,18 @@ for the requested confidence level (e.g. 1.96 for 95%). The drift/mean shifts th
 forecast *level* but not its variance, so it does not enter here. These widths
 match statsmodels' `get_forecast().conf_int()`.
 
+A wide band is not a defect: it is the model honestly reporting its uncertainty,
+and the widths match statsmodels/pmdarima. The legitimate way to *tighten* one is
+to lower σ² with a better-fitting model — not to shrink a calibrated interval.
+
 ![AirPassengers 95% prediction interval](images/airpassengers_interval.png)
 
-Above, goarima's 95% band (shaded) on AirPassengers fans out with the horizon
-because the series is differenced (`d=1`); pmdarima's interval (dashed) has the
-same width. See [`examples.md`](examples.md#prediction-intervals) for the worked
-example and the stationary (`d=0`) counterpart, where the band instead settles
-toward a constant.
+Above, the wide band is a non-seasonal `ARIMA(4,1,0)` on AirPassengers (it leaves
+the 12-month cycle in its residuals, inflating σ²); pmdarima at the same order
+(dashed) confirms the width. The tighter green band is a seasonal model
+(`AutoSARIMA`, section 7), whose seasonal difference cuts σ² ~6× and the band with
+it. See [`examples.md`](examples.md#prediction-intervals) for both levers — fitting
+the structure, and choosing the confidence level.
 
 ---
 

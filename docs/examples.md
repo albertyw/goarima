@@ -78,10 +78,8 @@ fixes below.
 ## Prediction intervals
 
 `ForecastInterval` returns the point forecast with a confidence band. The forecast
-variance comes from the model's MA(∞) representation, `Var(k) = σ²·Σψ²`, so the
-band widens with the horizon. The orders are the same `AutoARIMA` choices as above
-(MLE-refit); the shaded band is goarima's 95% interval and the dashed lines are
-[pmdarima](https://alkaline-ml.com/pmdarima/)'s at the same order.
+variance comes from the model's MA(∞) representation, `Var(k) = σ²·Σψ²` (so the
+band widens with the horizon), and the bounds are `forecast ± z·√Var(k)`:
 
 ```go
 series, _ := /* example/data/<name>.csv */
@@ -90,15 +88,53 @@ fc, _ := model.ForecastInterval(horizon, 0.95) // horizon, confidence level
 // fc.Point, fc.Lower, fc.Upper, fc.StdErr
 ```
 
-| AirPassengers — ARIMA(4,1,0), 95% | Lynx — ARIMA(4,0,0), 95% |
-|---|---|
-| ![AirPassengers prediction interval](images/airpassengers_interval.png) | ![Lynx prediction interval](images/lynx_interval.png) |
+A wide band is not a defect — it is the model honestly reporting its uncertainty,
+and the widths match [pmdarima](https://alkaline-ml.com/pmdarima/) / statsmodels
+(verified in the integration tests). So a band is tightened *legitimately* only by
+changing the question or improving the fit, never by shrinking a calibrated
+interval. The two charts below show the two levers.
 
-The two datasets show the two regimes. AirPassengers (`d=1`) is differenced, so the
-band keeps fanning out as the horizon grows; the small vertical offset from
-pmdarima is the same `d≥1` drift gap noted elsewhere — the interval *widths* still
-match. Lynx (`d=0`) is stationary, so both the forecast and the band settle toward
-constant levels, and goarima's band overlaps pmdarima's almost exactly.
+### Lever 1 — fit the structure (smaller σ² ⇒ tighter band)
+
+A non-seasonal `ARIMA(4,1,0)` on AirPassengers leaves the entire 12-month cycle in
+its residuals, so σ² — and the band — are large. Switching to `AutoSARIMA`, which
+takes a seasonal difference, drops σ² roughly **6×** (884 → 137) and the band with
+it, while the forecast finally follows the yearly peaks:
+
+![AirPassengers: a seasonal model tightens the 95% interval](images/airpassengers_interval.png)
+
+The light band is the non-seasonal 95% interval; the dashed lines are pmdarima at
+the same non-seasonal order — they coincide, confirming the wide band is real, not
+a goarima artefact. The green band is the seasonal model's 95% interval, far
+tighter and centred on the actual cycle.
+
+```go
+// wide band: non-seasonal
+ns, _ := goarima.AutoARIMA(series, 5, 2, 5)              // ARIMA(4,1,0)
+// tight band: model the seasonality
+se, _ := goarima.AutoSARIMA(series, 3, 1, 3, 12)         // ARIMA(1,1,0)(0,1,0)[12]
+fc, _ := se.ForecastInterval(24, 0.95)
+```
+
+### Lever 2 — ask for a lower confidence level
+
+A less conservative level uses a smaller `z` (1.28 for 80% vs 1.96 for 95%), so the
+band narrows by about a third. On the stationary Lynx series (`d=0`) the bands also
+settle toward constant width as the AR forecast decays to the mean:
+
+![Lynx: nested 80% and 95% prediction intervals](images/lynx_interval.png)
+
+```go
+model, _ := goarima.AutoARIMA(series, 5, 2, 5)           // ARIMA(4,0,0)
+narrow, _ := model.ForecastInterval(20, 0.80)
+wide, _   := model.ForecastInterval(20, 0.95)
+```
+
+(For series whose variance grows with their level, a variance-stabilizing
+transform — fit `log(series)`, then exponentiate the point and bounds — also keeps
+the band proportional and the lower bound positive. It helps only alongside a
+well-fitting model, though: a log transform on a *non-seasonal* AirPassengers fit
+still misses the cycle and does not tighten the band.)
 
 ---
 
