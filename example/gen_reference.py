@@ -61,6 +61,13 @@ SEASONAL_FIXED = [
     ("AirPassengers", load("airpassengers.csv"), (1, 1, 0), (0, 1, 0, 12), 12),
 ]
 
+# Forecast-interval examples. The conf_int half-widths come from statsmodels'
+# forecast-error variance (the same MA(infinity) psi-weights goarima uses), so
+# they validate goarima's ForecastInterval regardless of the d>=1 drift gap.
+INTERVAL = [
+    ("AirPassengers", load("airpassengers.csv"), (2, 1, 0), 12, 0.05),
+]
+
 
 def fixed_fit(series: list[float], order: tuple, horizon: int) -> dict:
     """Fit a fixed-order pmdarima model and capture coefficients + forecast."""
@@ -115,6 +122,24 @@ def seasonal_fit(series, order, seasonal_order, horizon):
     }
 
 
+def interval_fit(series, order, horizon, alpha):
+    """Fit a fixed-order model and capture the forecast confidence interval."""
+    model = pm.ARIMA(order=order, suppress_warnings=True)
+    model.fit(series)
+    forecast, conf_int = model.predict(
+        n_periods=horizon, return_conf_int=True, alpha=alpha
+    )
+    conf_int = np.asarray(conf_int)
+    return {
+        "order": list(order),
+        "horizon": horizon,
+        "alpha": alpha,
+        "forecast": np.asarray(forecast).tolist(),
+        "lower": conf_int[:, 0].tolist(),
+        "upper": conf_int[:, 1].tolist(),
+    }
+
+
 def main() -> None:
     fixtures = {
         "_meta": {
@@ -128,6 +153,9 @@ def main() -> None:
         "auto": {name: auto_fit(s, m, h) for name, s, m, h in AUTO},
         "seasonal_fixed": {
             name: seasonal_fit(s, o, so, h) for name, s, o, so, h in SEASONAL_FIXED
+        },
+        "interval": {
+            name: interval_fit(s, o, h, a) for name, s, o, h, a in INTERVAL
         },
     }
     os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
