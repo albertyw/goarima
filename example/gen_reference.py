@@ -20,6 +20,7 @@ import sys
 import numpy as np
 import pmdarima as pm
 import statsmodels
+import statsmodels.api as sm
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(HERE, "data")
@@ -59,6 +60,13 @@ AUTO = [
 # Exercises goarima's seasonal differencing/integration against statsmodels.
 SEASONAL_FIXED = [
     ("AirPassengers", load("airpassengers.csv"), (1, 1, 0), (0, 1, 0, 12), 12),
+]
+
+# Seasonal AR/MA examples (multiplicative SARIMA with nonzero P/Q). Validates
+# goarima's seasonal AR/MA factors against statsmodels SARIMAX. The airline model
+# (0,1,1)(0,1,1)12 is the canonical case (pure regular + seasonal MA).
+SEASONAL_ARMA = [
+    ("AirPassengers", load("airpassengers.csv"), (0, 1, 1), (0, 1, 1, 12), 12),
 ]
 
 # Forecast-interval examples. The conf_int half-widths come from statsmodels'
@@ -122,6 +130,33 @@ def seasonal_fit(series, order, seasonal_order, horizon):
     }
 
 
+def seasonal_arma_fit(series, order, seasonal_order, horizon):
+    """Fit a multiplicative SARIMA via statsmodels SARIMAX; capture the four
+    coefficient factors separately (by param name) plus the forecast."""
+    res = sm.tsa.statespace.SARIMAX(
+        series,
+        order=order,
+        seasonal_order=seasonal_order,
+        enforce_stationarity=False,
+        enforce_invertibility=False,
+    ).fit(disp=False)
+    named = dict(zip(res.param_names, res.params))
+
+    def by_prefix(prefix):
+        return [v for n, v in named.items() if n.startswith(prefix)]
+
+    return {
+        "order": list(order),
+        "seasonal_order": list(seasonal_order),
+        "horizon": horizon,
+        "phi": by_prefix("ar.L"),
+        "theta": by_prefix("ma.L"),
+        "seasonal_phi": by_prefix("ar.S."),
+        "seasonal_theta": by_prefix("ma.S."),
+        "forecast": list(np.asarray(res.forecast(horizon))),
+    }
+
+
 def interval_fit(series, order, horizon, alpha):
     """Fit a fixed-order model and capture the forecast confidence interval."""
     model = pm.ARIMA(order=order, suppress_warnings=True)
@@ -153,6 +188,9 @@ def main() -> None:
         "auto": {name: auto_fit(s, m, h) for name, s, m, h in AUTO},
         "seasonal_fixed": {
             name: seasonal_fit(s, o, so, h) for name, s, o, so, h in SEASONAL_FIXED
+        },
+        "seasonal_arma": {
+            name: seasonal_arma_fit(s, o, so, h) for name, s, o, so, h in SEASONAL_ARMA
         },
         "interval": {
             name: interval_fit(s, o, h, a) for name, s, o, h, a in INTERVAL
