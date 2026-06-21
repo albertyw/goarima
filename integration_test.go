@@ -490,7 +490,7 @@ var autoSeasonalCases = []struct {
 // fitGoldenAutoSeasonal runs AutoSARIMA and returns the fitted model + forecast.
 func fitGoldenAutoSeasonal(t *testing.T, s []float64, maxP, maxD, maxQ, period, horizon int) (*goarima.ARIMA, []float64) {
 	t.Helper()
-	model, err := goarima.AutoSARIMA(s, maxP, maxD, maxQ, period)
+	model, err := goarima.AutoSARIMA(s, maxP, maxD, maxQ, 0, 0, period)
 	require.NoError(t, err)
 	forecast, err := model.Forecast(horizon)
 	require.NoError(t, err)

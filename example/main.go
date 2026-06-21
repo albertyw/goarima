@@ -87,19 +87,19 @@ func runAuto(name string, series []float64, horizon int) {
 // prints them under a distinct [goarima-seasonal] label. compare.py parses only
 // the [goarima] blocks, so this extra block is ignored there.
 func runAutoSeasonal(name string, series []float64, period, horizon int) {
-	model, err := goarima.AutoSARIMA(series, 3, 1, 3, period)
+	model, err := goarima.AutoSARIMA(series, 3, 1, 3, 1, 1, period)
 	if err != nil {
 		fmt.Printf("[goarima-seasonal] %s: %v\n", name, err)
 		return
 	}
 	p, d, q := model.Orders()
-	_, bigD, _, m := model.SeasonalOrders()
+	bigP, bigD, bigQ, m := model.SeasonalOrders()
 	forecast, err := model.Forecast(horizon)
 	if err != nil {
 		fmt.Printf("[goarima-seasonal] %s: %v\n", name, err)
 		return
 	}
-	fmt.Printf("[goarima-seasonal] %s  ARIMA(%d,%d,%d)(0,%d,0)[%d]\n", name, p, d, q, bigD, m)
+	fmt.Printf("[goarima-seasonal] %s  ARIMA(%d,%d,%d)(%d,%d,%d)[%d]\n", name, p, d, q, bigP, bigD, bigQ, m)
 	fmt.Printf("  phi:      %.4f\n", model.Phi())
 	fmt.Printf("  forecast: %.4f\n\n", forecast)
 }
@@ -122,7 +122,7 @@ func fitAutoMLE(series []float64) (*goarima.ARIMA, string, error) {
 
 // fitAutoSeasonalMLE is fitAutoMLE's seasonal counterpart, via AutoSARIMA.
 func fitAutoSeasonalMLE(series []float64, period int) (*goarima.ARIMA, string, error) {
-	model, err := goarima.AutoSARIMA(series, 3, 1, 3, period)
+	model, err := goarima.AutoSARIMA(series, 3, 1, 3, 1, 1, period)
 	if err != nil {
 		return nil, "", err
 	}
