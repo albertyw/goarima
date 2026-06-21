@@ -110,11 +110,23 @@ type refSeasonalFit struct {
 }
 
 // refFixture is the whole committed pmdarima_reference.json document.
+// refIntervalFit is one statsmodels forecast-interval fixture: the point
+// forecast and the lower/upper confidence bounds at the given alpha.
+type refIntervalFit struct {
+	Order    []int     `json:"order"`
+	Horizon  int       `json:"horizon"`
+	Alpha    float64   `json:"alpha"`
+	Forecast []float64 `json:"forecast"`
+	Lower    []float64 `json:"lower"`
+	Upper    []float64 `json:"upper"`
+}
+
 type refFixture struct {
 	Meta          map[string]string         `json:"_meta"`
 	Fixed         map[string]refFit         `json:"fixed"`
 	Auto          map[string]refFit         `json:"auto"`
 	SeasonalFixed map[string]refSeasonalFit `json:"seasonal_fixed"`
+	Interval      map[string]refIntervalFit `json:"interval"`
 }
 
 // loadReference parses the embedded pmdarima fixture (no Python at test time).
@@ -399,6 +411,35 @@ func TestSeasonalFixedOrderMatchesPmdarima(t *testing.T) {
 			require.NoError(t, err)
 			for _, v := range fc {
 				require.False(t, math.IsNaN(v) || math.IsInf(v, 0))
+			}
+		})
+	}
+}
+
+// TestForecastIntervalMatchesStatsmodels checks goarima's ForecastInterval
+// against statsmodels. The fit is pure-AR (q==0) with d==1, so the d>=1 drift
+// makes the forecast *level* differ; the interval *half-width* (z·StdErr) comes
+// only from the forecast-error variance and so is compared directly, isolating
+// the psi-weight variance from the drift gap.
+func TestForecastIntervalMatchesStatsmodels(t *testing.T) {
+	ref := loadReference(t)
+	series := referenceSeries(t)
+	for name, fix := range ref.Interval {
+		t.Run(name, func(t *testing.T) {
+			p, d, q := fix.Order[0], fix.Order[1], fix.Order[2]
+			model, err := goarima.NewARIMA(p, d, q)
+			require.NoError(t, err)
+			require.NoError(t, model.Fit(series[name], goarima.WithMLE()))
+
+			fc, err := model.ForecastInterval(fix.Horizon, 1-fix.Alpha)
+			require.NoError(t, err)
+
+			for k := range fc.Point {
+				require.False(t, math.IsNaN(fc.StdErr[k]) || math.IsInf(fc.StdErr[k], 0))
+				assert.Less(t, fc.Lower[k], fc.Upper[k], "step %d ordered", k+1)
+				wantHalf := (fix.Upper[k] - fix.Lower[k]) / 2
+				gotHalf := (fc.Upper[k] - fc.Lower[k]) / 2
+				assert.InDeltaf(t, wantHalf, gotHalf, 0.03*wantHalf, "half-width[%d]", k)
 			}
 		})
 	}
