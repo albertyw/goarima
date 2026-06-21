@@ -44,3 +44,72 @@ func TestPsiWeightsSeasonalDiffIsOnesPerSeason(t *testing.T) {
 	psi := psiWeights(nil, nil, 0, 1, 4, 9)
 	assert.InDeltaSlice(t, []float64{1, 0, 0, 0, 1, 0, 0, 0, 1}, psi, 1e-12)
 }
+
+func fitAR1(t *testing.T) *ARIMA {
+	t.Helper()
+	m, err := NewARIMA(1, 0, 0)
+	assert.NoError(t, err)
+	assert.NoError(t, m.Fit(ar1Series(80, 0.5, 7)))
+	return m
+}
+
+func TestForecastIntervalPointMatchesForecast(t *testing.T) {
+	m := fitAR1(t)
+	point, err := m.Forecast(10)
+	assert.NoError(t, err)
+	fc, err := m.ForecastInterval(10, 0.95)
+	assert.NoError(t, err)
+	assert.InDeltaSlice(t, point, fc.Point, 1e-12)
+}
+
+func TestForecastIntervalStdErrMatchesPsiWeights(t *testing.T) {
+	m := fitAR1(t)
+	h := 8
+	fc, err := m.ForecastInterval(h, 0.95)
+	assert.NoError(t, err)
+
+	psi := psiWeights(m.Phi(), m.Theta(), 0, 0, 0, h)
+	var cum float64
+	for k := 0; k < h; k++ {
+		cum += psi[k] * psi[k]
+		want := math.Sqrt(m.Sigma2() * cum)
+		assert.InDelta(t, want, fc.StdErr[k], 1e-12, "step %d", k+1)
+	}
+}
+
+func TestForecastIntervalBoundsAreSymmetric(t *testing.T) {
+	m := fitAR1(t)
+	fc, err := m.ForecastInterval(6, 0.95)
+	assert.NoError(t, err)
+	const z95 = 1.959963984540054
+	for k := range fc.Point {
+		assert.InDelta(t, fc.Point[k]-z95*fc.StdErr[k], fc.Lower[k], 1e-9, "lower %d", k)
+		assert.InDelta(t, fc.Point[k]+z95*fc.StdErr[k], fc.Upper[k], 1e-9, "upper %d", k)
+	}
+}
+
+func TestForecastIntervalWidensWithHorizon(t *testing.T) {
+	m := fitAR1(t)
+	fc, err := m.ForecastInterval(10, 0.95)
+	assert.NoError(t, err)
+	for k := 1; k < len(fc.StdErr); k++ {
+		assert.Greater(t, fc.StdErr[k], fc.StdErr[k-1], "step %d", k)
+	}
+}
+
+func TestForecastIntervalErrorsOnUnfittedModel(t *testing.T) {
+	m, err := NewARIMA(1, 0, 0)
+	assert.NoError(t, err)
+	_, err = m.ForecastInterval(5, 0.95)
+	assert.Error(t, err)
+}
+
+func TestForecastIntervalRejectsBadArguments(t *testing.T) {
+	m := fitAR1(t)
+	_, err := m.ForecastInterval(0, 0.95)
+	assert.Error(t, err)
+	_, err = m.ForecastInterval(5, 0)
+	assert.Error(t, err)
+	_, err = m.ForecastInterval(5, 1)
+	assert.Error(t, err)
+}
