@@ -4,6 +4,7 @@ Worked examples of goarima on classic datasets, each compared against a
 maximum-likelihood reference at the same orders:
 
 - **ARIMA (non-seasonal)** — `AutoARIMA` vs [pmdarima](https://alkaline-ml.com/pmdarima/).
+- **Prediction intervals** — `ForecastInterval` confidence bands vs pmdarima's.
 - **Seasonal differencing (SARIMAX)** — `AutoSARIMA` vs statsmodels **SARIMAX**.
 
 In every chart the grey line is the observed history, the dashed line marks the
@@ -15,9 +16,10 @@ All orders are goarima's *automatic* choices, not hard-coded.
 1. `example/main.go` runs `AutoARIMA` (and `AutoSARIMA`) on each series and prints
    a `[goarima] <name> ARIMA(p,d,q)` block — and, for the seasonal datasets, a
    `[goarima-seasonal] <name> ARIMA(p,d,q)(P,D,Q)[m]` block — with the forecast.
-2. `example/plot_compare.py` and `example/plot_seasonal.py` parse those blocks,
-   fit the reference (pmdarima / statsmodels SARIMAX) at the same orders, and plot
-   each series' history with both forecasts.
+2. `example/plot_compare.py`, `example/plot_interval.py`, and
+   `example/plot_seasonal.py` parse those blocks, fit the reference (pmdarima /
+   statsmodels SARIMAX) at the same orders, and plot each series' history with both
+   forecasts (and, for `plot_interval.py`, the prediction bands).
 
 Regenerate the charts (needs the `example/env` venv) with:
 
@@ -70,6 +72,33 @@ Lynx (`d=0`) decays toward its mean, as a stationary AR forecast should. For the
 seasonal series (AirPassengers, WineInd, WoolyRnq), a *non-seasonal* ARIMA only
 partially captures the yearly cycle — which is exactly what seasonal differencing
 fixes below.
+
+---
+
+## Prediction intervals
+
+`ForecastInterval` returns the point forecast with a confidence band. The forecast
+variance comes from the model's MA(∞) representation, `Var(k) = σ²·Σψ²`, so the
+band widens with the horizon. The orders are the same `AutoARIMA` choices as above
+(MLE-refit); the shaded band is goarima's 95% interval and the dashed lines are
+[pmdarima](https://alkaline-ml.com/pmdarima/)'s at the same order.
+
+```go
+series, _ := /* example/data/<name>.csv */
+model, _ := goarima.AutoARIMA(series, 5, 2, 5)
+fc, _ := model.ForecastInterval(horizon, 0.95) // horizon, confidence level
+// fc.Point, fc.Lower, fc.Upper, fc.StdErr
+```
+
+| AirPassengers — ARIMA(4,1,0), 95% | Lynx — ARIMA(4,0,0), 95% |
+|---|---|
+| ![AirPassengers prediction interval](images/airpassengers_interval.png) | ![Lynx prediction interval](images/lynx_interval.png) |
+
+The two datasets show the two regimes. AirPassengers (`d=1`) is differenced, so the
+band keeps fanning out as the horizon grows; the small vertical offset from
+pmdarima is the same `d≥1` drift gap noted elsewhere — the interval *widths* still
+match. Lynx (`d=0`) is stationary, so both the forecast and the band settle toward
+constant levels, and goarima's band overlaps pmdarima's almost exactly.
 
 ---
 

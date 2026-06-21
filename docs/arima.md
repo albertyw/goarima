@@ -258,6 +258,14 @@ for the requested confidence level (e.g. 1.96 for 95%). The drift/mean shifts th
 forecast *level* but not its variance, so it does not enter here. These widths
 match statsmodels' `get_forecast().conf_int()`.
 
+![AirPassengers 95% prediction interval](images/airpassengers_interval.png)
+
+Above, goarima's 95% band (shaded) on AirPassengers fans out with the horizon
+because the series is differenced (`d=1`); pmdarima's interval (dashed) has the
+same width. See [`examples.md`](examples.md#prediction-intervals) for the worked
+example and the stationary (`d=0`) counterpart, where the band instead settles
+toward a constant.
+
 ---
 
 ## 6. Choosing the orders automatically (AutoARIMA)
