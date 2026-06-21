@@ -30,7 +30,9 @@ func (m *ARIMA) ForecastInterval(h int, level float64) (*Forecast, error) {
 		return nil, err
 	}
 
-	psi := psiWeights(m.phi, m.theta, m.d, m.bigD, m.period, h)
+	// Use the expanded polynomials so the seasonal AR/MA factors are included;
+	// psiWeights additionally folds in the differencing operators.
+	psi := psiWeights(m.expandedPhi, m.expandedTheta, m.d, m.bigD, m.period, h)
 	z := distuv.UnitNormal.Quantile((1 + level) / 2)
 
 	fc := &Forecast{
