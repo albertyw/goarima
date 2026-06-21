@@ -246,18 +246,19 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
 		return fmt.Errorf("ARMA estimation failed: %w", err)
 	}
 
-	// Optionally refine the coefficients (seasonal refinement is a later step;
-	// for now only non-seasonal models are refined), then recompute the residuals
-	// so sigma2 and the stored lastE reflect the refined fit. MLE takes precedence
-	// over CSS when both are requested.
-	if m.bigP == 0 && m.bigQ == 0 && len(phi)+len(theta) > 0 {
+	// Optionally refine the coefficients over the multiplicative factor vector
+	// (φ, Φₛ, θ, Θₛ), then recompute the residuals so sigma2 and the stored lastE
+	// reflect the refined fit. MLE takes precedence over CSS when both are
+	// requested. The seasonal refiners reduce to the non-seasonal case when P=Q=0.
+	if len(phi)+len(theta)+len(sphi)+len(stheta) > 0 {
 		switch {
 		case cfg.mle:
-			phi, theta = refineMLE(z, phi, theta)
-			residuals = armaResiduals(z, phi, theta)
+			phi, sphi, theta, stheta = refineSeasonalMLE(z, phi, sphi, theta, stheta, m.period)
 		case cfg.refine:
-			phi, theta = refineCSS(z, phi, theta)
-			residuals = armaResiduals(z, phi, theta)
+			phi, sphi, theta, stheta = refineSeasonalCSS(z, phi, sphi, theta, stheta, m.period)
+		}
+		if cfg.mle || cfg.refine {
+			residuals = armaResiduals(z, expandSeasonalAR(phi, sphi, m.period), expandSeasonalMA(theta, stheta, m.period))
 		}
 	}
 
