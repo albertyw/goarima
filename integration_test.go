@@ -399,7 +399,7 @@ func TestSeasonalFixedOrderMatchesPmdarima(t *testing.T) {
 			require.Equal(t, 0, bigP, "fixture has no seasonal AR (14a)")
 			require.Equal(t, 0, bigQ, "fixture has no seasonal MA (14a)")
 
-			model, err := goarima.NewSARIMA(p, d, q, bigD, m)
+			model, err := goarima.NewSARIMA(p, d, q, bigP, bigD, bigQ, m)
 			require.NoError(t, err)
 			require.NoError(t, model.Fit(series[name], goarima.WithMLE()))
 

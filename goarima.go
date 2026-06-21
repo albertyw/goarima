@@ -11,46 +11,55 @@ import (
    --------------------------------------------------------------- */
 
 type ARIMA struct {
-	p, d, q         int         // AR, differencing, MA non-seasonal orders
-	bigD, period    int         // seasonal differencing order D and seasonal period m
-	phi, theta      []float64   // AR & MA coefficients
-	lastY, lastE    []float64   // last p centered differenced observations & last q residuals
-	lastOrig        float64     // last original value (for undifferencing)
-	mu              float64     // mean of the differenced series (added back when forecasting)
-	anchors         []float64   // last value of s differenced 0..d-1 times (regular integration)
-	seasonalAnchors [][]float64 // last m values of the series seasonally differenced 0..D-1 times
-	sigma2          float64     // variance of the residuals (not used in forecasting)
-	fitted          bool        // whether Fit has populated the coefficients/state
+	p, d, q          int         // AR, differencing, MA non-seasonal orders
+	bigP, bigD, bigQ int         // seasonal AR, differencing, MA orders
+	period           int         // seasonal period m
+	phi, theta       []float64   // regular AR & MA coefficients (factors)
+	seasonalPhi      []float64   // seasonal AR coefficients Φₛ (length P)
+	seasonalTheta    []float64   // seasonal MA coefficients Θₛ (length Q)
+	lastY, lastE     []float64   // last p+P·m centered differenced observations & last q+Q·m residuals
+	lastOrig         float64     // last original value (for undifferencing)
+	mu               float64     // mean of the differenced series (added back when forecasting)
+	anchors          []float64   // last value of s differenced 0..d-1 times (regular integration)
+	seasonalAnchors  [][]float64 // last m values of the series seasonally differenced 0..D-1 times
+	sigma2           float64     // variance of the residuals (not used in forecasting)
+	fitted           bool        // whether Fit has populated the coefficients/state
 }
 
 // NewARIMA constructs a non-seasonal ARIMA(p,d,q) model. It is shorthand for
-// NewSARIMA(p, d, q, 0, 0).
+// NewSARIMA(p, d, q, 0, 0, 0, 0).
 func NewARIMA(p, d, q int) (*ARIMA, error) {
-	return NewSARIMA(p, d, q, 0, 0)
+	return NewSARIMA(p, d, q, 0, 0, 0, 0)
 }
 
-// NewSARIMA constructs a seasonal ARIMA model with seasonal differencing order D
-// and seasonal period m, i.e. the class (1-B)^d (1-B^m)^D y_t = ARMA(p,q). In
-// this version the seasonal AR and MA orders are always 0 (seasonal AR/MA is a
-// later phase); D and m add seasonal differencing only. m must be >= 2 when D > 0.
-func NewSARIMA(p, d, q, D, m int) (*ARIMA, error) {
-	if p < 0 || d < 0 || q < 0 || D < 0 {
+// NewSARIMA constructs a seasonal ARIMA model of the multiplicative class
+//
+//	φ(B)·Φₛ(Bᵐ)·(1−B)ᵈ(1−Bᵐ)ᴰ y_t = θ(B)·Θₛ(Bᵐ)·ε_t,
+//
+// with non-seasonal orders (p, d, q), seasonal orders (P, D, Q), and seasonal
+// period m. m must be >= 2 whenever any seasonal order (P, D, or Q) is positive.
+func NewSARIMA(p, d, q, P, D, Q, m int) (*ARIMA, error) {
+	if p < 0 || d < 0 || q < 0 || P < 0 || D < 0 || Q < 0 {
 		return nil, errors.New("ARIMA orders must be non-negative")
 	}
-	if p == 0 && d == 0 && q == 0 && D == 0 {
-		return nil, errors.New("at least one of AR, differencing, MA, or seasonal differencing order must be positive")
+	if p == 0 && d == 0 && q == 0 && P == 0 && D == 0 && Q == 0 {
+		return nil, errors.New("at least one ARIMA order must be positive")
 	}
-	if D > 0 && m < 2 {
-		return nil, errors.New("seasonal period m must be at least 2 when D > 0")
+	if (P > 0 || D > 0 || Q > 0) && m < 2 {
+		return nil, errors.New("seasonal period m must be at least 2 when a seasonal order is positive")
 	}
 	return &ARIMA{
 		p:               p,
 		d:               d,
 		q:               q,
+		bigP:            P,
 		bigD:            D,
+		bigQ:            Q,
 		period:          m,
 		phi:             make([]float64, p),
 		theta:           make([]float64, q),
+		seasonalPhi:     make([]float64, P),
+		seasonalTheta:   make([]float64, Q),
 		lastY:           make([]float64, p),
 		lastE:           make([]float64, q),
 		lastOrig:        0.0,
@@ -66,21 +75,31 @@ func (m *ARIMA) Orders() (int, int, int) {
 	return m.p, m.d, m.q
 }
 
-// SeasonalOrders returns the seasonal orders (P, D, Q, m). In this version P and
-// Q are always 0 (seasonal AR/MA is not yet implemented); D and m reflect the
-// seasonal differencing applied by the model.
+// SeasonalOrders returns the seasonal orders (P, D, Q, m).
 func (m *ARIMA) SeasonalOrders() (int, int, int, int) {
-	return 0, m.bigD, 0, m.period
+	return m.bigP, m.bigD, m.bigQ, m.period
 }
 
-// Phi returns a copy of the AR coefficients of the model.
+// Phi returns a copy of the regular AR coefficients (the φ factor, length p).
 func (m *ARIMA) Phi() []float64 {
 	return copyFloats(m.phi)
 }
 
-// Theta returns a copy of the MA coefficients of the model.
+// Theta returns a copy of the regular MA coefficients (the θ factor, length q).
 func (m *ARIMA) Theta() []float64 {
 	return copyFloats(m.theta)
+}
+
+// SeasonalPhi returns a copy of the seasonal AR coefficients (the Φₛ factor,
+// length P).
+func (m *ARIMA) SeasonalPhi() []float64 {
+	return copyFloats(m.seasonalPhi)
+}
+
+// SeasonalTheta returns a copy of the seasonal MA coefficients (the Θₛ factor,
+// length Q).
+func (m *ARIMA) SeasonalTheta() []float64 {
+	return copyFloats(m.seasonalTheta)
 }
 
 // LastY returns a copy of the last p differenced observations.

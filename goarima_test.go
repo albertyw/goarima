@@ -294,12 +294,12 @@ func TestARIMA(t *testing.T) {
 }
 
 func TestNewSARIMARejectsSeasonalPeriodBelowTwo(t *testing.T) {
-	_, err := NewSARIMA(1, 0, 0, 1, 1) // D>0 but m<2
+	_, err := NewSARIMA(1, 0, 0, 0, 1, 0, 1) // D>0 but m<2
 	require.Error(t, err)
 }
 
 func TestNewSARIMARejectsAllZeroOrders(t *testing.T) {
-	_, err := NewSARIMA(0, 0, 0, 0, 0)
+	_, err := NewSARIMA(0, 0, 0, 0, 0, 0, 0)
 	require.Error(t, err)
 }
 
@@ -322,7 +322,7 @@ func TestSeasonalRandomWalkForecastRepeatsSeason(t *testing.T) {
 	for i := 4; i < 40; i++ {
 		x = append(x, x[i-m]+0.001*r.NormFloat64())
 	}
-	model, err := NewSARIMA(0, 0, 0, 1, m)
+	model, err := NewSARIMA(0, 0, 0, 0, 1, 0, m)
 	require.NoError(t, err)
 	require.NoError(t, model.Fit(x))
 	fc, err := model.Forecast(m)
@@ -338,7 +338,7 @@ func TestCombinedRegularAndSeasonalForecastFinite(t *testing.T) {
 	for i := 0; i < 60; i++ {
 		series = append(series, float64(i)+10*float64(i%m))
 	}
-	model, err := NewSARIMA(1, 1, 0, 1, m)
+	model, err := NewSARIMA(1, 1, 0, 0, 1, 0, m)
 	require.NoError(t, err)
 	require.NoError(t, model.Fit(series))
 	fc, err := model.Forecast(12)

@@ -41,7 +41,7 @@ func (s searchSpace) evalCandidate(p, q int) candidate {
 		err   error
 	)
 	if s.period >= 2 {
-		model, err = NewSARIMA(p, s.d, q, s.bigD, s.period)
+		model, err = NewSARIMA(p, s.d, q, 0, s.bigD, 0, s.period)
 	} else {
 		model, err = NewARIMA(p, s.d, q)
 	}

@@ -38,3 +38,32 @@ func TestExpandSeasonalMANoRegularIsSeasonalOnly(t *testing.T) {
 func TestExpandSeasonalEmptyIsEmpty(t *testing.T) {
 	assert.Empty(t, expandSeasonalAR(nil, nil, 12))
 }
+
+func TestNewSARIMAStoresSeasonalOrders(t *testing.T) {
+	m, err := NewSARIMA(1, 0, 1, 2, 1, 1, 12) // p,d,q,P,D,Q,m
+	assert.NoError(t, err)
+	P, D, Q, period := m.SeasonalOrders()
+	assert.Equal(t, 2, P)
+	assert.Equal(t, 1, D)
+	assert.Equal(t, 1, Q)
+	assert.Equal(t, 12, period)
+}
+
+func TestNewSARIMASeasonalCoeffGettersLength(t *testing.T) {
+	m, err := NewSARIMA(1, 0, 1, 2, 0, 1, 12)
+	assert.NoError(t, err)
+	assert.Len(t, m.SeasonalPhi(), 2)
+	assert.Len(t, m.SeasonalTheta(), 1)
+}
+
+func TestNewSARIMARejectsSeasonalARWithoutValidPeriod(t *testing.T) {
+	_, err := NewSARIMA(0, 0, 0, 1, 0, 0, 1) // P=1 but m<2
+	assert.Error(t, err)
+}
+
+func TestNewSARIMARejectsNegativeSeasonalOrders(t *testing.T) {
+	_, err := NewSARIMA(1, 0, 0, -1, 0, 0, 12)
+	assert.Error(t, err)
+	_, err = NewSARIMA(1, 0, 0, 0, 0, -1, 12)
+	assert.Error(t, err)
+}

@@ -128,7 +128,7 @@ func fitAutoSeasonalMLE(series []float64, period int) (*goarima.ARIMA, string, e
 	}
 	p, d, q := model.Orders()
 	_, bigD, _, m := model.SeasonalOrders()
-	if refined, rerr := goarima.NewSARIMA(p, d, q, bigD, m); rerr == nil {
+	if refined, rerr := goarima.NewSARIMA(p, d, q, 0, bigD, 0, m); rerr == nil {
 		if refined.Fit(series, goarima.WithMLE()) == nil {
 			model = refined
 		}

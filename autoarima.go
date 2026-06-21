@@ -127,7 +127,7 @@ func AutoSARIMA(series []float64, maxP, maxD, maxQ, m int, opts ...FitOption) (*
 		return nil, errors.New("AutoSARIMA: no candidate model could be fit")
 	}
 
-	best, err := NewSARIMA(bestP, d, bestQ, bigD, m)
+	best, err := NewSARIMA(bestP, d, bestQ, 0, bigD, 0, m)
 	if err != nil {
 		return nil, err
 	}
