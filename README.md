@@ -153,6 +153,26 @@ model, err := goarima.AutoARIMA(series, 5, 2, 5,
 )
 ```
 
+### Prediction intervals
+
+`ForecastInterval` returns the point forecast together with a two-sided
+prediction interval at a given confidence level. The standard errors come from
+the model's MA(∞) representation (`Var(k steps) = σ²·Σψ²`), with the differencing
+operators folded into the AR side so the bounds are on the original scale:
+
+```go
+fc, err := model.ForecastInterval(12, 0.95) // horizon, confidence level
+if err != nil {
+	panic(err)
+}
+fc.Point  // point forecast (identical to Forecast(12))
+fc.Lower  // lower bounds
+fc.Upper  // upper bounds
+fc.StdErr // forecast standard errors
+```
+
+The interval widths match statsmodels' `get_forecast().conf_int()`.
+
 ### Inspecting a fitted model
 
 ```go
@@ -242,7 +262,6 @@ seasonal AR/MA. In particular:
 - **Seasonal differencing only.** `NewSARIMA`/`AutoSARIMA` handle the SARIMA
   `(1−Bᵐ)ᴰ` operator (validated against statsmodels SARIMAX), but the
   multiplicative seasonal AR/MA polynomials `(P, Q)` are not yet implemented.
-- **Point forecasts only** (no prediction intervals).
 
 ## Development
 

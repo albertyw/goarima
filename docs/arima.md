@@ -19,7 +19,9 @@ passengers, yearly sunspot counts, daily prices. Forecasting asks: given the
 values up to now (`y_1, y_2, …, y_n`), what are the next `h` values likely to be?
 
 `goarima` produces **point forecasts** — a single best-guess number for each
-future step — by fitting an ARIMA model to the history and rolling it forward.
+future step — by fitting an ARIMA model to the history and rolling it forward,
+and optional **prediction intervals** quantifying the uncertainty around them
+(see [§5](#prediction-intervals)).
 
 ---
 
@@ -234,6 +236,28 @@ centered scale, then reverses the transformations:
 A stationary AR forecast decays toward the series mean; a differenced (`d≥1`)
 forecast can keep trending, because integration accumulates the steps.
 
+### Prediction intervals
+
+A point forecast alone says nothing about how uncertain it is. `ForecastInterval`
+(in `interval.go`) adds that. Every ARIMA model can be written as an infinite
+moving average, `y_t = Σ_{j≥0} ψ_j·ε_{t-j}` (the **MA(∞) representation**), where
+the **ψ-weights** are obtained by dividing the MA polynomial by the AR
+polynomial. Crucially, the differencing operators `(1−B)ᵈ(1−Bᵐ)ᴰ` are folded into
+the AR side, so the ψ-weights describe the series on its *original* (integrated)
+scale.
+
+The variance of the `k`-step-ahead forecast error is then
+
+```
+Var(k) = σ²·(ψ_0² + ψ_1² + … + ψ_{k-1}²),
+```
+
+which grows with the horizon — the further ahead you look, the wider the band.
+The interval is `forecast ± z·√Var(k)`, where `z` is the standard-normal quantile
+for the requested confidence level (e.g. 1.96 for 95%). The drift/mean shifts the
+forecast *level* but not its variance, so it does not enter here. These widths
+match statsmodels' `get_forecast().conf_int()`.
+
 ---
 
 ## 6. Choosing the orders automatically (AutoARIMA)
@@ -350,7 +374,7 @@ leaves out things a production statistics package would include:
 - **Seasonal differencing only, no seasonal AR/MA.** `NewSARIMA`/`AutoSARIMA`
   handle the `(1−Bᵐ)ᴰ` operator (section 7), but the multiplicative seasonal
   AR/MA polynomials are not yet implemented.
-- **Point forecasts only** — no prediction intervals.
+- **No exogenous regressors.** Models are univariate; there is no `X` term.
 
 See the project README's *Limitations* section for the current list.
 
