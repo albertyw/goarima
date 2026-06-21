@@ -109,7 +109,6 @@ type refSeasonalFit struct {
 	AIC           float64   `json:"aic"`
 }
 
-// refFixture is the whole committed pmdarima_reference.json document.
 // refIntervalFit is one statsmodels forecast-interval fixture: the point
 // forecast and the lower/upper confidence bounds at the given alpha.
 type refIntervalFit struct {
@@ -121,12 +120,27 @@ type refIntervalFit struct {
 	Upper    []float64 `json:"upper"`
 }
 
+// refSeasonalARMAFit is one statsmodels SARIMAX fixture with nonzero seasonal
+// AR/MA orders: the four coefficient factors captured separately.
+type refSeasonalARMAFit struct {
+	Order         []int     `json:"order"`
+	SeasonalOrder []int     `json:"seasonal_order"`
+	Horizon       int       `json:"horizon"`
+	Phi           []float64 `json:"phi"`
+	Theta         []float64 `json:"theta"`
+	SeasonalPhi   []float64 `json:"seasonal_phi"`
+	SeasonalTheta []float64 `json:"seasonal_theta"`
+	Forecast      []float64 `json:"forecast"`
+}
+
+// refFixture is the whole committed pmdarima_reference.json document.
 type refFixture struct {
-	Meta          map[string]string         `json:"_meta"`
-	Fixed         map[string]refFit         `json:"fixed"`
-	Auto          map[string]refFit         `json:"auto"`
-	SeasonalFixed map[string]refSeasonalFit `json:"seasonal_fixed"`
-	Interval      map[string]refIntervalFit `json:"interval"`
+	Meta          map[string]string             `json:"_meta"`
+	Fixed         map[string]refFit             `json:"fixed"`
+	Auto          map[string]refFit             `json:"auto"`
+	SeasonalFixed map[string]refSeasonalFit     `json:"seasonal_fixed"`
+	SeasonalARMA  map[string]refSeasonalARMAFit `json:"seasonal_arma"`
+	Interval      map[string]refIntervalFit     `json:"interval"`
 }
 
 // loadReference parses the embedded pmdarima fixture (no Python at test time).
@@ -416,6 +430,37 @@ func TestSeasonalFixedOrderMatchesPmdarima(t *testing.T) {
 	}
 }
 
+// TestSeasonalARMAMatchesStatsmodels checks goarima's multiplicative seasonal
+// AR/MA fit against statsmodels SARIMAX at an explicit seasonal_order with
+// nonzero P/Q. The airline model (0,1,1)(0,1,1)12 is pure MA, so the regular and
+// seasonal MA coefficients are identifiable and compared directly (under MLE);
+// the d>=1 forecast level still carries the drift gap, so it is only checked finite.
+func TestSeasonalARMAMatchesStatsmodels(t *testing.T) {
+	ref := loadReference(t)
+	series := referenceSeries(t)
+	for name, fix := range ref.SeasonalARMA {
+		t.Run(name, func(t *testing.T) {
+			p, d, q := fix.Order[0], fix.Order[1], fix.Order[2]
+			P, D, Q, m := fix.SeasonalOrder[0], fix.SeasonalOrder[1], fix.SeasonalOrder[2], fix.SeasonalOrder[3]
+
+			model, err := goarima.NewSARIMA(p, d, q, P, D, Q, m)
+			require.NoError(t, err)
+			require.NoError(t, model.Fit(series[name], goarima.WithMLE()))
+
+			if p == 0 && P == 0 { // pure MA: MA factors are identifiable
+				assertCoeffsClose(t, "theta", fix.Theta, model.Theta(), 0.05)
+				assertCoeffsClose(t, "seasonalTheta", fix.SeasonalTheta, model.SeasonalTheta(), 0.05)
+			}
+
+			fc, err := model.Forecast(fix.Horizon)
+			require.NoError(t, err)
+			for _, v := range fc {
+				require.False(t, math.IsNaN(v) || math.IsInf(v, 0))
+			}
+		})
+	}
+}
+
 // TestForecastIntervalMatchesStatsmodels checks goarima's ForecastInterval
 // against statsmodels. The fit is pure-AR (q==0) with d==1, so the d>=1 drift
 // makes the forecast *level* differ; the interval *half-width* (z·StdErr) comes
@@ -481,16 +526,16 @@ type goldenFixture struct {
 // autoSeasonalCases drives the seasonal AutoSARIMA golden baseline. Series are
 // looked up by name in referenceSeries.
 var autoSeasonalCases = []struct {
-	Name                              string
-	MaxP, MaxD, MaxQ, Period, Horizon int
+	Name                                                string
+	MaxP, MaxD, MaxQ, MaxBigP, MaxBigQ, Period, Horizon int
 }{
-	{"AirPassengers", 3, 1, 3, 12, 12},
+	{"AirPassengers", 3, 1, 3, 1, 1, 12, 12},
 }
 
 // fitGoldenAutoSeasonal runs AutoSARIMA and returns the fitted model + forecast.
-func fitGoldenAutoSeasonal(t *testing.T, s []float64, maxP, maxD, maxQ, period, horizon int) (*goarima.ARIMA, []float64) {
+func fitGoldenAutoSeasonal(t *testing.T, s []float64, maxP, maxD, maxQ, maxBigP, maxBigQ, period, horizon int) (*goarima.ARIMA, []float64) {
 	t.Helper()
-	model, err := goarima.AutoSARIMA(s, maxP, maxD, maxQ, 0, 0, period)
+	model, err := goarima.AutoSARIMA(s, maxP, maxD, maxQ, maxBigP, maxBigQ, period)
 	require.NoError(t, err)
 	forecast, err := model.Forecast(horizon)
 	require.NoError(t, err)
@@ -571,7 +616,7 @@ func TestGoldenAutoSeasonalSelection(t *testing.T) {
 			want, ok := golden.AutoSeasonal[c.Name]
 			require.Truef(t, ok, "no auto-seasonal golden for %s (run TestGoldenWithMLE -update)", c.Name)
 
-			model, forecast := fitGoldenAutoSeasonal(t, series[c.Name], c.MaxP, c.MaxD, c.MaxQ, c.Period, c.Horizon)
+			model, forecast := fitGoldenAutoSeasonal(t, series[c.Name], c.MaxP, c.MaxD, c.MaxQ, c.MaxBigP, c.MaxBigQ, c.Period, c.Horizon)
 			p, d, q := model.Orders()
 			bigP, bigD, bigQ, m := model.SeasonalOrders()
 			assert.Equal(t, want.Order, []int{p, d, q}, "selected order")
@@ -607,7 +652,7 @@ func writeGolden(t *testing.T, ref refFixture, series map[string][]float64) {
 	}
 	autoSeasonal := make(map[string]goldenAutoSeasonalFit, len(autoSeasonalCases))
 	for _, c := range autoSeasonalCases {
-		model, forecast := fitGoldenAutoSeasonal(t, series[c.Name], c.MaxP, c.MaxD, c.MaxQ, c.Period, c.Horizon)
+		model, forecast := fitGoldenAutoSeasonal(t, series[c.Name], c.MaxP, c.MaxD, c.MaxQ, c.MaxBigP, c.MaxBigQ, c.Period, c.Horizon)
 		p, d, q := model.Orders()
 		bigP, bigD, bigQ, m := model.SeasonalOrders()
 		autoSeasonal[c.Name] = goldenAutoSeasonalFit{
