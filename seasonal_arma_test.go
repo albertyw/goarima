@@ -88,6 +88,49 @@ func TestFitRecoversSeasonalAR(t *testing.T) {
 	assert.InDelta(t, 0.6, sphi[0], 0.1)
 }
 
+func TestRefineSeasonalCSSImprovesSeed(t *testing.T) {
+	// Centered seasonal AR(1) Φ=0.6; a deliberately-off seed (0) must be improved
+	// toward the truth by the CSS refinement.
+	m := 4
+	r := rand.New(rand.NewSource(3))
+	n := 300
+	z := make([]float64, n)
+	for i := m; i < n; i++ {
+		z[i] = 0.6*z[i-m] + r.NormFloat64()
+	}
+	mu := mean(z)
+	for i := range z {
+		z[i] -= mu
+	}
+	css := func(sphi []float64) float64 {
+		a := expandSeasonalAR(nil, sphi, m)
+		var s float64
+		for _, e := range armaResiduals(z, a, nil) {
+			s += e * e
+		}
+		return s
+	}
+	badSeed := []float64{0.0}
+	_, rsphi, _, _ := refineSeasonalCSS(z, nil, badSeed, nil, nil, m)
+	assert.Less(t, css(rsphi), css(badSeed))
+	assert.InDelta(t, 0.6, rsphi[0], 0.1)
+}
+
+func TestFitSeasonalARWithMLERecoversCoefficient(t *testing.T) {
+	// With MLE the seasonal AR coefficient is recovered tightly.
+	m := 4
+	r := rand.New(rand.NewSource(9))
+	n := 400
+	x := make([]float64, n)
+	for i := m; i < n; i++ {
+		x[i] = 0.7*x[i-m] + r.NormFloat64()
+	}
+	model, err := NewSARIMA(0, 0, 0, 1, 0, 0, m)
+	assert.NoError(t, err)
+	assert.NoError(t, model.Fit(x, WithMLE()))
+	assert.InDelta(t, 0.7, model.SeasonalPhi()[0], 0.07)
+}
+
 func TestFitSeasonalARMAForecastFinite(t *testing.T) {
 	// Regular AR(1) × seasonal AR(1): forecasts must stay finite and the right length.
 	m := 12
