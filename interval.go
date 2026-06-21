@@ -69,9 +69,11 @@ func polyMul(a, b []float64) []float64 {
 // as a coefficient slice with Φ_full[0] = 1. phi holds the AR coefficients in the
 // y_t = Σ φ_j y_{t−j} convention, so φ(B) = 1 − φ₁B − … − φ_pBᵖ.
 func arPolynomial(phi []float64, d, bigD, period int) []float64 {
-	poly := []float64{1}
-	for _, v := range phi {
-		poly = polyMul(poly, []float64{1, -v}) // multiply (1 − φ_j B) term by term
+	// φ(B) = 1 − φ₁B − … − φ_pBᵖ is a single polynomial, not a product of factors.
+	poly := make([]float64, len(phi)+1)
+	poly[0] = 1
+	for i, v := range phi {
+		poly[i+1] = -v
 	}
 	for k := 0; k < d; k++ {
 		poly = polyMul(poly, []float64{1, -1}) // (1 − B)

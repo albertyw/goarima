@@ -39,6 +39,20 @@ func TestPsiWeightsAR1IsGeometric(t *testing.T) {
 	assert.InDeltaSlice(t, want, psi, 1e-12)
 }
 
+func TestPsiWeightsAR2(t *testing.T) {
+	// AR(2) recursion: ψ₀=1, ψ₁=φ₁, ψ_j=φ₁ψ_{j−1}+φ₂ψ_{j−2}. The AR coefficients
+	// form one polynomial 1−φ₁B−φ₂B², not a product of (1−φ₁B)(1−φ₂B).
+	phi := []float64{0.5, -0.3}
+	psi := psiWeights(phi, nil, 0, 0, 0, 5)
+	want := make([]float64, 5)
+	want[0] = 1
+	want[1] = phi[0]
+	for j := 2; j < 5; j++ {
+		want[j] = phi[0]*want[j-1] + phi[1]*want[j-2]
+	}
+	assert.InDeltaSlice(t, want, psi, 1e-12)
+}
+
 func TestPsiWeightsSeasonalDiffIsOnesPerSeason(t *testing.T) {
 	// (1−B⁴)⁻¹ = 1 + B⁴ + B⁸ + …: ψ is 1 at lags 0,4,8 and 0 elsewhere.
 	psi := psiWeights(nil, nil, 0, 1, 4, 9)
