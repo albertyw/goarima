@@ -17,6 +17,8 @@ type ARIMA struct {
 	phi, theta       []float64   // regular AR & MA coefficients (factors)
 	seasonalPhi      []float64   // seasonal AR coefficients Φₛ (length P)
 	seasonalTheta    []float64   // seasonal MA coefficients Θₛ (length Q)
+	expandedPhi      []float64   // φ(B)·Φₛ(Bᵐ) AR recursion coeffs (forecast/state-space)
+	expandedTheta    []float64   // θ(B)·Θₛ(Bᵐ) MA recursion coeffs (forecast/state-space)
 	lastY, lastE     []float64   // last p+P·m centered differenced observations & last q+Q·m residuals
 	lastOrig         float64     // last original value (for undifferencing)
 	mu               float64     // mean of the differenced series (added back when forecasting)
@@ -199,7 +201,7 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
 		opt(&cfg)
 	}
 
-	if len(series) <= m.bigD*m.period+m.d+m.p {
+	if len(series) <= m.bigD*m.period+m.d+m.p+m.bigP*m.period {
 		return errors.New("series too short for the requested ARIMA model")
 	}
 	if err := validateFinite(series); err != nil {
@@ -238,16 +240,17 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
 		z[i] = y[i] - m.mu
 	}
 
-	// 3. estimate the ARMA coefficients on the centered series
-	phi, theta, residuals, err := hannanRissanen(z, m.p, m.q)
+	// 3. estimate the (multiplicative) SARMA factors on the centered series
+	phi, theta, sphi, stheta, residuals, err := seasonalHannanRissanen(z, m.p, m.q, m.bigP, m.bigQ, m.period)
 	if err != nil {
 		return fmt.Errorf("ARMA estimation failed: %w", err)
 	}
 
-	// Optionally refine the coefficients, then recompute the residuals so sigma2
-	// and the stored lastE reflect the refined fit. Exact MLE takes precedence
+	// Optionally refine the coefficients (seasonal refinement is a later step;
+	// for now only non-seasonal models are refined), then recompute the residuals
+	// so sigma2 and the stored lastE reflect the refined fit. MLE takes precedence
 	// over CSS when both are requested.
-	if len(phi)+len(theta) > 0 {
+	if m.bigP == 0 && m.bigQ == 0 && len(phi)+len(theta) > 0 {
 		switch {
 		case cfg.mle:
 			phi, theta = refineMLE(z, phi, theta)
@@ -260,16 +263,21 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
 
 	m.phi = phi
 	m.theta = theta
+	m.seasonalPhi = sphi
+	m.seasonalTheta = stheta
+	m.expandedPhi = expandSeasonalAR(phi, sphi, m.period)
+	m.expandedTheta = expandSeasonalMA(theta, stheta, m.period)
 	m.sigma2 = meanSquare(residuals)
 
-	// 4. store last centered observations and residuals
-	if m.p > 0 {
-		m.lastY = z[len(z)-m.p:]
+	// 4. store the last centered observations and residuals the forecast recursion
+	//    needs: one per coefficient of the expanded AR/MA polynomials.
+	if pe := len(m.expandedPhi); pe > 0 {
+		m.lastY = z[len(z)-pe:]
 	} else {
 		m.lastY = []float64{}
 	}
-	if m.q > 0 {
-		m.lastE = residuals[len(residuals)-m.q:]
+	if qe := len(m.expandedTheta); qe > 0 {
+		m.lastE = residuals[len(residuals)-qe:]
 	} else {
 		m.lastE = []float64{}
 	}
@@ -317,6 +325,11 @@ func (m *ARIMA) forecastDiff(h int) ([]float64, error) {
 
 	diffPred := make([]float64, h)
 
+	// The recursion runs on the expanded AR/MA polynomials φ(B)·Φₛ(Bᵐ) and
+	// θ(B)·Θₛ(Bᵐ), so the effective orders are their lengths.
+	pEff := len(m.expandedPhi)
+	qEff := len(m.expandedTheta)
+
 	// copy the stored last observations and residuals
 	y := make([]float64, len(m.lastY))
 	copy(y, m.lastY)
@@ -326,15 +339,15 @@ func (m *ARIMA) forecastDiff(h int) ([]float64, error) {
 	for i := 0; i < h; i++ {
 		var val float64
 		// AR contribution
-		for j := 0; j < m.p; j++ {
+		for j := 0; j < pEff; j++ {
 			if j < len(y) {
-				val += m.phi[j] * y[len(y)-1-j]
+				val += m.expandedPhi[j] * y[len(y)-1-j]
 			}
 		}
 		// MA contribution
-		for j := 0; j < m.q; j++ {
+		for j := 0; j < qEff; j++ {
 			if j < len(e) {
-				val += m.theta[j] * e[len(e)-1-j]
+				val += m.expandedTheta[j] * e[len(e)-1-j]
 			}
 		}
 		// val is on the centered scale; add the mean back for the differenced-scale forecast
@@ -342,13 +355,13 @@ func (m *ARIMA) forecastDiff(h int) ([]float64, error) {
 
 		// update buffers (centered scale)
 		y = append(y, val)
-		if len(y) > m.p {
+		if len(y) > pEff {
 			y = y[1:]
 		}
 		// error in forecast is assumed zero (mean forecast)
-		if m.q > 0 {
+		if qEff > 0 {
 			e = append(e, 0.0)
-			if len(e) > m.q {
+			if len(e) > qEff {
 				e = e[1:]
 			}
 		}

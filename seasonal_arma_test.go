@@ -1,6 +1,8 @@
 package goarima
 
 import (
+	"math"
+	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -66,4 +68,42 @@ func TestNewSARIMARejectsNegativeSeasonalOrders(t *testing.T) {
 	assert.Error(t, err)
 	_, err = NewSARIMA(1, 0, 0, 0, 0, -1, 12)
 	assert.Error(t, err)
+}
+
+func TestFitRecoversSeasonalAR(t *testing.T) {
+	// Pure seasonal AR(1): x_t = 0.6·x_{t-m} + e. The seed estimator should
+	// recover Φₛ ≈ 0.6.
+	m := 4
+	r := rand.New(rand.NewSource(11))
+	n := 400
+	x := make([]float64, n)
+	for i := m; i < n; i++ {
+		x[i] = 0.6*x[i-m] + r.NormFloat64()
+	}
+	model, err := NewSARIMA(0, 0, 0, 1, 0, 0, m)
+	assert.NoError(t, err)
+	assert.NoError(t, model.Fit(x))
+	sphi := model.SeasonalPhi()
+	assert.Len(t, sphi, 1)
+	assert.InDelta(t, 0.6, sphi[0], 0.1)
+}
+
+func TestFitSeasonalARMAForecastFinite(t *testing.T) {
+	// Regular AR(1) × seasonal AR(1): forecasts must stay finite and the right length.
+	m := 12
+	r := rand.New(rand.NewSource(5))
+	n := 240
+	x := make([]float64, n)
+	for i := m + 1; i < n; i++ {
+		x[i] = 0.4*x[i-1] + 0.5*x[i-m] - 0.2*x[i-m-1] + r.NormFloat64()
+	}
+	model, err := NewSARIMA(1, 0, 0, 1, 0, 0, m)
+	assert.NoError(t, err)
+	assert.NoError(t, model.Fit(x))
+	fc, err := model.Forecast(24)
+	assert.NoError(t, err)
+	assert.Len(t, fc, 24)
+	for _, v := range fc {
+		assert.False(t, math.IsNaN(v) || math.IsInf(v, 0))
+	}
 }
