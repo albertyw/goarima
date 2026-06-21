@@ -161,6 +161,53 @@ func TestForecastIntervalSeasonalARMatchesExpandedPsi(t *testing.T) {
 	assert.Greater(t, fc.StdErr[m], fc.StdErr[0])
 }
 
+func TestFitSeasonalConstantSeriesIsZero(t *testing.T) {
+	s := make([]float64, 60)
+	for i := range s {
+		s[i] = 5
+	}
+	model, err := NewSARIMA(1, 0, 0, 1, 0, 0, 4)
+	assert.NoError(t, err)
+	assert.NoError(t, model.Fit(s))
+	assert.InDelta(t, 0, model.Phi()[0], 1e-12)
+	assert.InDelta(t, 0, model.SeasonalPhi()[0], 1e-12)
+	fc, err := model.Forecast(4)
+	assert.NoError(t, err)
+	for _, v := range fc {
+		assert.InDelta(t, 5, v, 1e-9)
+	}
+}
+
+func TestFitSeasonalMAErrorsOnShortSeries(t *testing.T) {
+	// Too few observations for the seasonal-MA Stage-2 regression.
+	s := make([]float64, 15)
+	for i := range s {
+		s[i] = float64(i % 3)
+	}
+	model, err := NewSARIMA(0, 0, 0, 0, 0, 1, 12)
+	assert.NoError(t, err)
+	assert.Error(t, model.Fit(s))
+}
+
+func TestFitRecoversSeasonalMA(t *testing.T) {
+	// Pure seasonal MA(1): x_t = e_t + 0.5·e_{t-m}. MLE should recover Θₛ ≈ 0.5.
+	m := 4
+	r := rand.New(rand.NewSource(17))
+	n := 600
+	e := make([]float64, n)
+	for i := range e {
+		e[i] = r.NormFloat64()
+	}
+	x := make([]float64, n)
+	for i := m; i < n; i++ {
+		x[i] = e[i] + 0.5*e[i-m]
+	}
+	model, err := NewSARIMA(0, 0, 0, 0, 0, 1, m)
+	assert.NoError(t, err)
+	assert.NoError(t, model.Fit(x, WithMLE()))
+	assert.InDelta(t, 0.5, model.SeasonalTheta()[0], 0.12)
+}
+
 func TestFitSeasonalARMAForecastFinite(t *testing.T) {
 	// Regular AR(1) × seasonal AR(1): forecasts must stay finite and the right length.
 	m := 12
