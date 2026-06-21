@@ -131,6 +131,36 @@ func TestFitSeasonalARWithMLERecoversCoefficient(t *testing.T) {
 	assert.InDelta(t, 0.7, model.SeasonalPhi()[0], 0.07)
 }
 
+func TestForecastIntervalSeasonalARMatchesExpandedPsi(t *testing.T) {
+	// The interval variance must use the expanded AR/MA (seasonal factor folded
+	// in), so the band widens at the seasonal lags rather than staying flat.
+	m := 4
+	r := rand.New(rand.NewSource(13))
+	n := 400
+	x := make([]float64, n)
+	for i := m; i < n; i++ {
+		x[i] = 0.6*x[i-m] + r.NormFloat64()
+	}
+	model, err := NewSARIMA(0, 0, 0, 1, 0, 0, m)
+	assert.NoError(t, err)
+	assert.NoError(t, model.Fit(x))
+
+	h := 9
+	fc, err := model.ForecastInterval(h, 0.95)
+	assert.NoError(t, err)
+
+	expandedPhi := expandSeasonalAR(model.Phi(), model.SeasonalPhi(), m)
+	expandedTheta := expandSeasonalMA(model.Theta(), model.SeasonalTheta(), m)
+	psi := psiWeights(expandedPhi, expandedTheta, 0, 0, 0, h)
+	var cum float64
+	for k := 0; k < h; k++ {
+		cum += psi[k] * psi[k]
+		assert.InDelta(t, math.Sqrt(model.Sigma2()*cum), fc.StdErr[k], 1e-9, "step %d", k+1)
+	}
+	// Sanity: the band must grow once the seasonal lag kicks in (k >= m).
+	assert.Greater(t, fc.StdErr[m], fc.StdErr[0])
+}
+
 func TestFitSeasonalARMAForecastFinite(t *testing.T) {
 	// Regular AR(1) × seasonal AR(1): forecasts must stay finite and the right length.
 	m := 12
