@@ -127,13 +127,13 @@ func fitAutoSeasonalMLE(series []float64, period int) (*goarima.ARIMA, string, e
 		return nil, "", err
 	}
 	p, d, q := model.Orders()
-	_, bigD, _, m := model.SeasonalOrders()
-	if refined, rerr := goarima.NewSARIMA(p, d, q, 0, bigD, 0, m); rerr == nil {
+	bigP, bigD, bigQ, m := model.SeasonalOrders()
+	if refined, rerr := goarima.NewSARIMA(p, d, q, bigP, bigD, bigQ, m); rerr == nil {
 		if refined.Fit(series, goarima.WithMLE()) == nil {
 			model = refined
 		}
 	}
-	return model, fmt.Sprintf("ARIMA(%d,%d,%d)(0,%d,0)[%d]", p, d, q, bigD, m), nil
+	return model, fmt.Sprintf("ARIMA(%d,%d,%d)(%d,%d,%d)[%d]", p, d, q, bigP, bigD, bigQ, m), nil
 }
 
 // printInterval prints one [goarima-interval] block: a key identifying the band,
