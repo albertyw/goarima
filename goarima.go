@@ -11,46 +11,57 @@ import (
    --------------------------------------------------------------- */
 
 type ARIMA struct {
-	p, d, q         int         // AR, differencing, MA non-seasonal orders
-	bigD, period    int         // seasonal differencing order D and seasonal period m
-	phi, theta      []float64   // AR & MA coefficients
-	lastY, lastE    []float64   // last p centered differenced observations & last q residuals
-	lastOrig        float64     // last original value (for undifferencing)
-	mu              float64     // mean of the differenced series (added back when forecasting)
-	anchors         []float64   // last value of s differenced 0..d-1 times (regular integration)
-	seasonalAnchors [][]float64 // last m values of the series seasonally differenced 0..D-1 times
-	sigma2          float64     // variance of the residuals (not used in forecasting)
-	fitted          bool        // whether Fit has populated the coefficients/state
+	p, d, q          int         // AR, differencing, MA non-seasonal orders
+	bigP, bigD, bigQ int         // seasonal AR, differencing, MA orders
+	period           int         // seasonal period m
+	phi, theta       []float64   // regular AR & MA coefficients (factors)
+	seasonalPhi      []float64   // seasonal AR coefficients Φₛ (length P)
+	seasonalTheta    []float64   // seasonal MA coefficients Θₛ (length Q)
+	expandedPhi      []float64   // φ(B)·Φₛ(Bᵐ) AR recursion coeffs (forecast/state-space)
+	expandedTheta    []float64   // θ(B)·Θₛ(Bᵐ) MA recursion coeffs (forecast/state-space)
+	lastY, lastE     []float64   // last p+P·m centered differenced observations & last q+Q·m residuals
+	lastOrig         float64     // last original value (for undifferencing)
+	mu               float64     // mean of the differenced series (added back when forecasting)
+	anchors          []float64   // last value of s differenced 0..d-1 times (regular integration)
+	seasonalAnchors  [][]float64 // last m values of the series seasonally differenced 0..D-1 times
+	sigma2           float64     // variance of the residuals (not used in forecasting)
+	fitted           bool        // whether Fit has populated the coefficients/state
 }
 
 // NewARIMA constructs a non-seasonal ARIMA(p,d,q) model. It is shorthand for
-// NewSARIMA(p, d, q, 0, 0).
+// NewSARIMA(p, d, q, 0, 0, 0, 0).
 func NewARIMA(p, d, q int) (*ARIMA, error) {
-	return NewSARIMA(p, d, q, 0, 0)
+	return NewSARIMA(p, d, q, 0, 0, 0, 0)
 }
 
-// NewSARIMA constructs a seasonal ARIMA model with seasonal differencing order D
-// and seasonal period m, i.e. the class (1-B)^d (1-B^m)^D y_t = ARMA(p,q). In
-// this version the seasonal AR and MA orders are always 0 (seasonal AR/MA is a
-// later phase); D and m add seasonal differencing only. m must be >= 2 when D > 0.
-func NewSARIMA(p, d, q, D, m int) (*ARIMA, error) {
-	if p < 0 || d < 0 || q < 0 || D < 0 {
+// NewSARIMA constructs a seasonal ARIMA model of the multiplicative class
+//
+//	φ(B)·Φₛ(Bᵐ)·(1−B)ᵈ(1−Bᵐ)ᴰ y_t = θ(B)·Θₛ(Bᵐ)·ε_t,
+//
+// with non-seasonal orders (p, d, q), seasonal orders (P, D, Q), and seasonal
+// period m. m must be >= 2 whenever any seasonal order (P, D, or Q) is positive.
+func NewSARIMA(p, d, q, P, D, Q, m int) (*ARIMA, error) {
+	if p < 0 || d < 0 || q < 0 || P < 0 || D < 0 || Q < 0 {
 		return nil, errors.New("ARIMA orders must be non-negative")
 	}
-	if p == 0 && d == 0 && q == 0 && D == 0 {
-		return nil, errors.New("at least one of AR, differencing, MA, or seasonal differencing order must be positive")
+	if p == 0 && d == 0 && q == 0 && P == 0 && D == 0 && Q == 0 {
+		return nil, errors.New("at least one ARIMA order must be positive")
 	}
-	if D > 0 && m < 2 {
-		return nil, errors.New("seasonal period m must be at least 2 when D > 0")
+	if (P > 0 || D > 0 || Q > 0) && m < 2 {
+		return nil, errors.New("seasonal period m must be at least 2 when a seasonal order is positive")
 	}
 	return &ARIMA{
 		p:               p,
 		d:               d,
 		q:               q,
+		bigP:            P,
 		bigD:            D,
+		bigQ:            Q,
 		period:          m,
 		phi:             make([]float64, p),
 		theta:           make([]float64, q),
+		seasonalPhi:     make([]float64, P),
+		seasonalTheta:   make([]float64, Q),
 		lastY:           make([]float64, p),
 		lastE:           make([]float64, q),
 		lastOrig:        0.0,
@@ -66,21 +77,31 @@ func (m *ARIMA) Orders() (int, int, int) {
 	return m.p, m.d, m.q
 }
 
-// SeasonalOrders returns the seasonal orders (P, D, Q, m). In this version P and
-// Q are always 0 (seasonal AR/MA is not yet implemented); D and m reflect the
-// seasonal differencing applied by the model.
+// SeasonalOrders returns the seasonal orders (P, D, Q, m).
 func (m *ARIMA) SeasonalOrders() (int, int, int, int) {
-	return 0, m.bigD, 0, m.period
+	return m.bigP, m.bigD, m.bigQ, m.period
 }
 
-// Phi returns a copy of the AR coefficients of the model.
+// Phi returns a copy of the regular AR coefficients (the φ factor, length p).
 func (m *ARIMA) Phi() []float64 {
 	return copyFloats(m.phi)
 }
 
-// Theta returns a copy of the MA coefficients of the model.
+// Theta returns a copy of the regular MA coefficients (the θ factor, length q).
 func (m *ARIMA) Theta() []float64 {
 	return copyFloats(m.theta)
+}
+
+// SeasonalPhi returns a copy of the seasonal AR coefficients (the Φₛ factor,
+// length P).
+func (m *ARIMA) SeasonalPhi() []float64 {
+	return copyFloats(m.seasonalPhi)
+}
+
+// SeasonalTheta returns a copy of the seasonal MA coefficients (the Θₛ factor,
+// length Q).
+func (m *ARIMA) SeasonalTheta() []float64 {
+	return copyFloats(m.seasonalTheta)
 }
 
 // LastY returns a copy of the last p differenced observations.
@@ -180,7 +201,7 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
 		opt(&cfg)
 	}
 
-	if len(series) <= m.bigD*m.period+m.d+m.p {
+	if len(series) <= m.bigD*m.period+m.d+m.p+m.bigP*m.period {
 		return errors.New("series too short for the requested ARIMA model")
 	}
 	if err := validateFinite(series); err != nil {
@@ -219,38 +240,45 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
 		z[i] = y[i] - m.mu
 	}
 
-	// 3. estimate the ARMA coefficients on the centered series
-	phi, theta, residuals, err := hannanRissanen(z, m.p, m.q)
+	// 3. estimate the (multiplicative) SARMA factors on the centered series
+	phi, theta, sphi, stheta, residuals, err := seasonalHannanRissanen(z, m.p, m.q, m.bigP, m.bigQ, m.period)
 	if err != nil {
 		return fmt.Errorf("ARMA estimation failed: %w", err)
 	}
 
-	// Optionally refine the coefficients, then recompute the residuals so sigma2
-	// and the stored lastE reflect the refined fit. Exact MLE takes precedence
-	// over CSS when both are requested.
-	if len(phi)+len(theta) > 0 {
+	// Optionally refine the coefficients over the multiplicative factor vector
+	// (φ, Φₛ, θ, Θₛ), then recompute the residuals so sigma2 and the stored lastE
+	// reflect the refined fit. MLE takes precedence over CSS when both are
+	// requested. The seasonal refiners reduce to the non-seasonal case when P=Q=0.
+	if len(phi)+len(theta)+len(sphi)+len(stheta) > 0 {
 		switch {
 		case cfg.mle:
-			phi, theta = refineMLE(z, phi, theta)
-			residuals = armaResiduals(z, phi, theta)
+			phi, sphi, theta, stheta = refineSeasonalMLE(z, phi, sphi, theta, stheta, m.period)
 		case cfg.refine:
-			phi, theta = refineCSS(z, phi, theta)
-			residuals = armaResiduals(z, phi, theta)
+			phi, sphi, theta, stheta = refineSeasonalCSS(z, phi, sphi, theta, stheta, m.period)
+		}
+		if cfg.mle || cfg.refine {
+			residuals = armaResiduals(z, expandSeasonalAR(phi, sphi, m.period), expandSeasonalMA(theta, stheta, m.period))
 		}
 	}
 
 	m.phi = phi
 	m.theta = theta
+	m.seasonalPhi = sphi
+	m.seasonalTheta = stheta
+	m.expandedPhi = expandSeasonalAR(phi, sphi, m.period)
+	m.expandedTheta = expandSeasonalMA(theta, stheta, m.period)
 	m.sigma2 = meanSquare(residuals)
 
-	// 4. store last centered observations and residuals
-	if m.p > 0 {
-		m.lastY = z[len(z)-m.p:]
+	// 4. store the last centered observations and residuals the forecast recursion
+	//    needs: one per coefficient of the expanded AR/MA polynomials.
+	if pe := len(m.expandedPhi); pe > 0 {
+		m.lastY = z[len(z)-pe:]
 	} else {
 		m.lastY = []float64{}
 	}
-	if m.q > 0 {
-		m.lastE = residuals[len(residuals)-m.q:]
+	if qe := len(m.expandedTheta); qe > 0 {
+		m.lastE = residuals[len(residuals)-qe:]
 	} else {
 		m.lastE = []float64{}
 	}
@@ -298,6 +326,11 @@ func (m *ARIMA) forecastDiff(h int) ([]float64, error) {
 
 	diffPred := make([]float64, h)
 
+	// The recursion runs on the expanded AR/MA polynomials φ(B)·Φₛ(Bᵐ) and
+	// θ(B)·Θₛ(Bᵐ), so the effective orders are their lengths.
+	pEff := len(m.expandedPhi)
+	qEff := len(m.expandedTheta)
+
 	// copy the stored last observations and residuals
 	y := make([]float64, len(m.lastY))
 	copy(y, m.lastY)
@@ -307,15 +340,15 @@ func (m *ARIMA) forecastDiff(h int) ([]float64, error) {
 	for i := 0; i < h; i++ {
 		var val float64
 		// AR contribution
-		for j := 0; j < m.p; j++ {
+		for j := 0; j < pEff; j++ {
 			if j < len(y) {
-				val += m.phi[j] * y[len(y)-1-j]
+				val += m.expandedPhi[j] * y[len(y)-1-j]
 			}
 		}
 		// MA contribution
-		for j := 0; j < m.q; j++ {
+		for j := 0; j < qEff; j++ {
 			if j < len(e) {
-				val += m.theta[j] * e[len(e)-1-j]
+				val += m.expandedTheta[j] * e[len(e)-1-j]
 			}
 		}
 		// val is on the centered scale; add the mean back for the differenced-scale forecast
@@ -323,13 +356,13 @@ func (m *ARIMA) forecastDiff(h int) ([]float64, error) {
 
 		// update buffers (centered scale)
 		y = append(y, val)
-		if len(y) > m.p {
+		if len(y) > pEff {
 			y = y[1:]
 		}
 		// error in forecast is assumed zero (mean forecast)
-		if m.q > 0 {
+		if qEff > 0 {
 			e = append(e, 0.0)
-			if len(e) > m.q {
+			if len(e) > qEff {
 				e = e[1:]
 			}
 		}

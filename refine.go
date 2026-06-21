@@ -25,37 +25,73 @@ func refineCoefficients(phiHR, thetaHR []float64, fn func(phi, theta []float64) 
 	if p+q == 0 {
 		return phiHR, thetaHR // nothing to optimize
 	}
-
-	objective := func(x []float64) float64 {
-		return fn(x[:p], x[p:])
-	}
-
 	seed := make([]float64, p+q)
 	copy(seed[:p], phiHR)
 	copy(seed[p:], thetaHR)
-	seedObj := objective(seed)
+	best := nelderMeadRefine(seed, func(x []float64) float64 { return fn(x[:p], x[p:]) })
+	return copyFloats(best[:p]), copyFloats(best[p:])
+}
 
-	// Cap the function evaluations to bound the worst-case runtime on a
-	// pathological (e.g. flat) objective surface. The limit is far above what
-	// Nelder-Mead needs to converge in p+q dimensions, and the best-so-far
-	// result is still gated below, so a capped run stays correct.
-	settings := &optimize.Settings{FuncEvaluations: 1000 * (p + q + 1)}
+// nelderMeadRefine minimizes objective starting from seed with a derivative-free
+// Nelder-Mead search and returns the minimizer only if it strictly improves on
+// the seed; otherwise it returns the seed unchanged. objective is expected to
+// return +Inf for parameter vectors it wants to reject (e.g. non-stationary /
+// non-invertible), keeping the optimizer in the stable region — such a vector can
+// never beat the seed, so the result is always the seed or a strictly better
+// stable point. The function-evaluation cap bounds the worst-case runtime on a
+// pathological (e.g. flat) surface and is far above what Nelder-Mead needs.
+func nelderMeadRefine(seed []float64, objective func([]float64) float64) []float64 {
+	if len(seed) == 0 {
+		return seed
+	}
+	seedObj := objective(seed)
+	settings := &optimize.Settings{FuncEvaluations: 1000 * (len(seed) + 1)}
 	result, err := optimize.Minimize(optimize.Problem{Func: objective}, seed, settings, &optimize.NelderMead{})
 	if err != nil || result == nil {
-		return phiHR, thetaHR
+		return seed
 	}
-
-	// Accept the optimum only if it strictly improves on the seed. A +Inf
-	// objective (rejected by fn) can never satisfy this, so the returned
-	// coefficients are always the stable seed or a strictly better stable point.
 	if objective(result.X) < seedObj {
-		phi := make([]float64, p)
-		copy(phi, result.X[:p])
-		theta := make([]float64, q)
-		copy(theta, result.X[p:])
-		return phi, theta
+		return result.X
 	}
-	return phiHR, thetaHR
+	return seed
+}
+
+// refineSeasonalCoefficients is the multiplicative-SARMA generalization of
+// refineCoefficients: it refines the packed factor vector (φ, Φₛ, θ, Θₛ) by
+// minimizing fn, which receives the four factors separately. Like the
+// non-seasonal helper, the refined factors are returned only if they strictly
+// improve on the seed.
+func refineSeasonalCoefficients(phi, sphi, theta, stheta []float64, fn func(phi, sphi, theta, stheta []float64) float64) (rphi, rsphi, rtheta, rstheta []float64) {
+	p, P, q := len(phi), len(sphi), len(theta)
+	n := p + P + q + len(stheta)
+	if n == 0 {
+		return phi, sphi, theta, stheta
+	}
+	seed := make([]float64, n)
+	copy(seed[:p], phi)
+	copy(seed[p:p+P], sphi)
+	copy(seed[p+P:p+P+q], theta)
+	copy(seed[p+P+q:], stheta)
+	best := nelderMeadRefine(seed, func(x []float64) float64 {
+		return fn(x[:p], x[p:p+P], x[p+P:p+P+q], x[p+P+q:])
+	})
+	return copyFloats(best[:p]), copyFloats(best[p : p+P]), copyFloats(best[p+P : p+P+q]), copyFloats(best[p+P+q:])
+}
+
+// refineSeasonalCSS refines the multiplicative-SARMA seed by minimizing the
+// conditional sum of squares of the expanded fit on the centered series z.
+// Non-stationary / non-invertible factor vectors are penalized with +Inf.
+func refineSeasonalCSS(z, phi, sphi, theta, stheta []float64, m int) (rphi, rsphi, rtheta, rstheta []float64) {
+	return refineSeasonalCoefficients(phi, sphi, theta, stheta, func(phi, sphi, theta, stheta []float64) float64 {
+		if !isStationary(phi) || !isStationary(sphi) || !isInvertible(theta) || !isInvertible(stheta) {
+			return math.Inf(1)
+		}
+		var s float64
+		for _, e := range armaResiduals(z, expandSeasonalAR(phi, sphi, m), expandSeasonalMA(theta, stheta, m)) {
+			s += e * e
+		}
+		return s
+	})
 }
 
 // refineCSS refines the Hannan-Rissanen seed (phiHR, thetaHR) by minimizing the

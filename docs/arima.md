@@ -346,9 +346,28 @@ about seasonality. Forecasting integrates back the other way: undo the ordinary
 differencing, then add back each seasonal lag, using the last `m` observed values
 of each level as anchors (`SeasonalUndifference`).
 
-`NewSARIMA(p, d, q, D, m)` fits an explicit seasonal-differencing model.
-`AutoSARIMA(series, maxP, maxD, maxQ, m)` chooses `D` automatically with the
-**Wang-Smith-Hyndman seasonal-strength measure**
+Beyond differencing, a seasonal series often has **seasonal AR/MA** structure:
+the value relates to the same month last year, or last year's shock echoes into
+this year's. These are the multiplicative seasonal factors `Φₛ(Bᵐ)` and
+`Θₛ(Bᵐ)` — the regular AR/MA polynomials but in `Bᵐ` instead of `B`. The full
+model multiplies them with the regular factors and the differencing:
+
+```
+φ(B)·Φₛ(Bᵐ)·(1 − B)ᵈ·(1 − Bᵐ)ᴰ y_t = θ(B)·Θₛ(Bᵐ)·ε_t.
+```
+
+goarima expands these products into ordinary (long) AR/MA polynomials — e.g.
+`(1 − φ₁B)(1 − Φ₁Bᵐ)` becomes a polynomial with terms at lags `1`, `m`, and
+`m+1` — so the same estimation, state-space, and forecasting machinery handles
+them with no special cases (`expandSeasonalAR`/`expandSeasonalMA` in
+`seasonal_arma.go`). The seasonal factors are seeded by a Hannan-Rissanen
+regression extended with seasonal lags and then, under `WithMLE`, refined to the
+exact multiplicative likelihood — so `Φₛ`/`Θₛ` match statsmodels SARIMAX.
+
+`NewSARIMA(p, d, q, P, D, Q, m)` fits an explicit seasonal model; `SeasonalPhi()`
+and `SeasonalTheta()` return the fitted seasonal factors.
+`AutoSARIMA(series, maxP, maxD, maxQ, maxBigP, maxBigQ, m)` chooses `D`
+automatically with the **Wang-Smith-Hyndman seasonal-strength measure**
 
 ```
 Fs = max(0, 1 − Var(remainder) / Var(detrended))   ∈ [0, 1],
@@ -360,15 +379,14 @@ strong enough to difference (`D = 1`, capped there); otherwise `D = 0`. This is
 the rule R's `forecast::nsdiffs(test="seas")` uses, and like KPSS for `d`, it
 avoids over-differencing a series that only looks seasonal because it trends.
 After `D` is fixed, `d` is chosen by KPSS on the seasonally-differenced series and
-`p, q` by the usual information-criterion search.
+the four orders `p, q, P, Q` by the usual information-criterion search, now over a
+four-dimensional grid (the seasonal orders are capped small, `0..1` by default).
 
-This seasonal model is the differencing half of the **SARIMA**
-`(p, d, q)(P, D, Q)ₘ` family. goarima validates it against statsmodels'
-**SARIMAX** class (Seasonal ARIMA with eXogenous regressors) — the reference the
-integration suite fits at `seasonal_order=(0, D, 0, m)` — which reduces to plain
-seasonal ARIMA when, as here, there are no exogenous regressors. The seasonal
-`AR/MA` terms `P` and `Q` (the multiplicative `Φ(Bᵐ)`, `Θ(Bᵐ)` polynomials) are a
-later phase; `SeasonalOrders()` reports them as 0 for now.
+This is the full **SARIMA** `(p, d, q)(P, D, Q)ₘ` family. goarima validates it
+against statsmodels' **SARIMAX** class (Seasonal ARIMA with eXogenous regressors)
+— the reference the integration suite fits at `seasonal_order=(P, D, Q, m)` —
+which reduces to plain seasonal ARIMA when, as here, there are no exogenous
+regressors (the one piece goarima does not implement).
 
 ---
 
@@ -384,10 +402,8 @@ leaves out things a production statistics package would include:
 - **Unstable fits are rejected, not repaired.** If an explicit `(p,d,q)` lands
   outside the stationary/invertible region, `Fit` returns an error instead of
   re-estimating into the valid region.
-- **Seasonal differencing only, no seasonal AR/MA.** `NewSARIMA`/`AutoSARIMA`
-  handle the `(1−Bᵐ)ᴰ` operator (section 7), but the multiplicative seasonal
-  AR/MA polynomials are not yet implemented.
-- **No exogenous regressors.** Models are univariate; there is no `X` term.
+- **No exogenous regressors.** Models are univariate; there is no `X` term — the
+  one piece of statsmodels' SARIMA**X** goarima does not implement.
 
 See the project README's *Limitations* section for the current list.
 

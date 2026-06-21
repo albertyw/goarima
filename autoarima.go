@@ -50,18 +50,18 @@ func AutoARIMA(series []float64, maxP, maxD, maxQ int, opts ...FitOption) (*ARIM
 		opts:   opts,
 	}
 
-	var bestP, bestQ int
+	var sel order
 	if cfg.stepwise {
-		bestP, bestQ = space.stepwiseSearch(cfg.parallel)
+		sel = space.stepwiseSearch(cfg.parallel)
 	} else {
-		bestP, bestQ = space.gridSearch(cfg.parallel)
+		sel = space.gridSearch(cfg.parallel)
 	}
 
-	if bestP < 0 {
+	if sel[0] < 0 {
 		return nil, errors.New("AutoARIMA: no candidate model could be fit")
 	}
 
-	best, err := NewARIMA(bestP, d, bestQ)
+	best, err := NewARIMA(sel[0], d, sel[1])
 	if err != nil {
 		return nil, err
 	}
@@ -75,15 +75,15 @@ func AutoARIMA(series []float64, maxP, maxD, maxQ int, opts ...FitOption) (*ARIM
 // period m (m >= 2) and returns a fitted model. It chooses the seasonal
 // differencing order D (0 or 1) with the seasonal-strength measure, then the
 // regular differencing order d with the KPSS test on the seasonally-differenced
-// series, then the non-seasonal orders p and q with the same search AutoARIMA
-// uses (grid by default; WithStepwise / WithParallel honored). In this version
-// the seasonal AR and MA orders P and Q are always 0 (deferred to a later phase).
+// series, then the non-seasonal orders p,q and the seasonal AR/MA orders P,Q with
+// the same search AutoARIMA uses, over 0..maxP, 0..maxQ, 0..maxBigP, 0..maxBigQ
+// (grid by default; WithStepwise / WithParallel honored).
 //
 // The criterion defaults to AIC (WithCriterion to change it). Any FitOption
 // (WithCSSRefinement, WithMLE) is threaded through to every candidate fit and
 // the final refit, exactly as in AutoARIMA.
-func AutoSARIMA(series []float64, maxP, maxD, maxQ, m int, opts ...FitOption) (*ARIMA, error) {
-	if maxP < 0 || maxD < 0 || maxQ < 0 {
+func AutoSARIMA(series []float64, maxP, maxD, maxQ, maxBigP, maxBigQ, m int, opts ...FitOption) (*ARIMA, error) {
+	if maxP < 0 || maxD < 0 || maxQ < 0 || maxBigP < 0 || maxBigQ < 0 {
 		return nil, errors.New("AutoSARIMA: max orders must be non-negative")
 	}
 	if m < 2 {
@@ -106,28 +106,30 @@ func AutoSARIMA(series []float64, maxP, maxD, maxQ, m int, opts ...FitOption) (*
 	d := selectD(s, maxD)
 
 	space := searchSpace{
-		series: series,
-		d:      d,
-		n:      len(series) - bigD*m - d, // differenced length, common to all (p,q)
-		maxP:   maxP,
-		maxQ:   maxQ,
-		bigD:   bigD,
-		period: m,
-		crit:   cfg.criterion,
-		opts:   opts,
+		series:  series,
+		d:       d,
+		n:       len(series) - bigD*m - d, // differenced length, common to all orders
+		maxP:    maxP,
+		maxQ:    maxQ,
+		maxBigP: maxBigP,
+		maxBigQ: maxBigQ,
+		bigD:    bigD,
+		period:  m,
+		crit:    cfg.criterion,
+		opts:    opts,
 	}
 
-	var bestP, bestQ int
+	var sel order
 	if cfg.stepwise {
-		bestP, bestQ = space.stepwiseSearch(cfg.parallel)
+		sel = space.stepwiseSearch(cfg.parallel)
 	} else {
-		bestP, bestQ = space.gridSearch(cfg.parallel)
+		sel = space.gridSearch(cfg.parallel)
 	}
-	if bestP < 0 {
+	if sel[0] < 0 {
 		return nil, errors.New("AutoSARIMA: no candidate model could be fit")
 	}
 
-	best, err := NewSARIMA(bestP, d, bestQ, bigD, m)
+	best, err := NewSARIMA(sel[0], d, sel[1], sel[2], bigD, sel[3], m)
 	if err != nil {
 		return nil, err
 	}

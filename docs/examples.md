@@ -5,7 +5,7 @@ maximum-likelihood reference at the same orders:
 
 - **ARIMA (non-seasonal)** — `AutoARIMA` vs [pmdarima](https://alkaline-ml.com/pmdarima/).
 - **Prediction intervals** — `ForecastInterval` confidence bands vs pmdarima's.
-- **Seasonal differencing (SARIMAX)** — `AutoSARIMA` vs statsmodels **SARIMAX**.
+- **Seasonal models (SARIMAX)** — `AutoSARIMA` vs statsmodels **SARIMAX**.
 
 In every chart the grey line is the observed history, the dashed line marks the
 last observation, and the two coloured lines are the forecasts continuing from it.
@@ -98,8 +98,8 @@ interval. The two charts below show the two levers.
 
 A non-seasonal `ARIMA(4,1,0)` on AirPassengers leaves the entire 12-month cycle in
 its residuals, so σ² — and the band — are large. Switching to `AutoSARIMA`, which
-takes a seasonal difference, drops σ² roughly **6×** (884 → 137) and the band with
-it, while the forecast finally follows the yearly peaks:
+models the seasonality, drops σ² roughly **6×** (884 → 135) and the band with it,
+while the forecast finally follows the yearly peaks:
 
 ![AirPassengers: a seasonal model tightens the 95% interval](images/airpassengers_interval.png)
 
@@ -112,7 +112,7 @@ tighter and centred on the actual cycle.
 // wide band: non-seasonal
 ns, _ := goarima.AutoARIMA(series, 5, 2, 5)              // ARIMA(4,1,0)
 // tight band: model the seasonality
-se, _ := goarima.AutoSARIMA(series, 3, 1, 3, 12)         // ARIMA(1,1,0)(0,1,0)[12]
+se, _ := goarima.AutoSARIMA(series, 3, 1, 3, 1, 1, 12)   // ARIMA(1,1,0)(1,1,0)[12]
 fc, _ := se.ForecastInterval(24, 0.95)
 ```
 
@@ -138,14 +138,15 @@ still misses the cycle and does not tighten the band.)
 
 ---
 
-## Seasonal differencing (SARIMAX)
+## Seasonal models (SARIMAX)
 
-These two strongly seasonal monthly series take a seasonal difference (`D = 1`,
-`m = 12`), so the forecasts reproduce the yearly cycle that the non-seasonal fits
-above flatten. The reference here is statsmodels' **SARIMAX** (Seasonal ARIMA with
-eXogenous regressors).
+These two strongly seasonal monthly series are fit with full multiplicative
+seasonal models — seasonal differencing *and* seasonal AR/MA terms — so the
+forecasts reproduce the yearly cycle that the non-seasonal fits above flatten. The
+reference is statsmodels' **SARIMAX** (Seasonal ARIMA with eXogenous regressors),
+fit at the same `order`/`seasonal_order`.
 
-### AirPassengers — ARIMA(1,1,0)(0,1,0)[12]
+### AirPassengers — ARIMA(1,1,0)(1,1,0)[12]
 
 Monthly international airline passengers (1949–1960): a rising trend with a strong
 12-month cycle that grows in amplitude.
@@ -156,25 +157,26 @@ Monthly international airline passengers (1949–1960): a rising trend with a st
 
 ```go
 series, _ := /* example/data/airpassengers.csv */
-model, _ := goarima.AutoSARIMA(series, 3, 1, 3, 12) // maxP, maxD, maxQ, m
+model, _ := goarima.AutoSARIMA(series, 3, 1, 3, 1, 1, 12) // maxP, maxD, maxQ, maxBigP, maxBigQ, m
 forecast, _ := model.Forecast(24)
-// selected: ARIMA(1,1,0)(0,1,0)[12]
+// selected: ARIMA(1,1,0)(1,1,0)[12]
 ```
 
-`AutoSARIMA` picked one ordinary difference (`d = 1`, KPSS) and one seasonal
-difference (`D = 1`, the seasonal-strength test), then a single AR term.
+`AutoSARIMA` picked one ordinary difference (`d = 1`, KPSS), one seasonal
+difference (`D = 1`, the seasonal-strength test), a regular AR term, and a seasonal
+AR term (`P = 1`).
 
 **statsmodels SARIMAX reference** (the orange line):
 
 ```python
-SARIMAX(series, order=(1, 1, 0), seasonal_order=(0, 1, 0, 12),
+SARIMAX(series, order=(1, 1, 0), seasonal_order=(1, 1, 0, 12),
         enforce_stationarity=False, enforce_invertibility=False).fit()
 ```
 
 The two forecasts are nearly identical — both follow the seasonal peaks and the
 upward trend.
 
-### WineInd — ARIMA(2,1,1)(0,1,0)[12]
+### WineInd — ARIMA(2,1,1)(0,1,1)[12]
 
 Monthly Australian wine sales: a sharper, noisier 12-month cycle.
 
@@ -184,18 +186,18 @@ Monthly Australian wine sales: a sharper, noisier 12-month cycle.
 
 ```go
 series, _ := /* example/data/wineind.csv */
-model, _ := goarima.AutoSARIMA(series, 3, 1, 3, 12) // maxP, maxD, maxQ, m
+model, _ := goarima.AutoSARIMA(series, 3, 1, 3, 1, 1, 12) // maxP, maxD, maxQ, maxBigP, maxBigQ, m
 forecast, _ := model.Forecast(24)
-// selected: ARIMA(2,1,1)(0,1,0)[12]
+// selected: ARIMA(2,1,1)(0,1,1)[12]
 ```
 
-Here the search added two AR terms and one MA term on top of the same
-`(d=1, D=1, m=12)` differencing.
+Here the search added two regular AR terms, a regular MA term, and a seasonal MA
+term (`Q = 1`) on top of the `(d=1, D=1, m=12)` differencing.
 
 **statsmodels SARIMAX reference:**
 
 ```python
-SARIMAX(series, order=(2, 1, 1), seasonal_order=(0, 1, 0, 12),
+SARIMAX(series, order=(2, 1, 1), seasonal_order=(0, 1, 1, 12),
         enforce_stationarity=False, enforce_invertibility=False).fit()
 ```
 
@@ -205,6 +207,7 @@ likelihood) — the same drift difference documented in the integration tests.
 
 ---
 
-> **Note on scope.** goarima implements seasonal *differencing*
-> `(p, d, q)(0, D, 0)ₘ`. The multiplicative seasonal AR/MA polynomials (`P`, `Q`)
-> are a later phase; see [`docs/arima.md`](arima.md) §7 for the details.
+> **Note.** goarima implements the full multiplicative SARIMA
+> `(p, d, q)(P, D, Q)ₘ` family (validated against statsmodels SARIMAX); it does not
+> implement exogenous regressors (the **X** in SARIMAX). See
+> [`docs/arima.md`](arima.md) §7 for the details.

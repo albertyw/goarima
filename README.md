@@ -7,8 +7,9 @@
 ![Sunspots forecast comparison](docs/images/sunspots.png)
 
 A pure-Go implementation of ARIMA (AutoRegressive Integrated Moving Average)
-time-series modeling, with automatic order selection and seasonal differencing
-(SARIMA, validated against statsmodels SARIMAX).
+time-series modeling, with automatic order selection, prediction intervals, and
+full multiplicative seasonal `(p,d,q)(P,D,Q)ₘ` models (SARIMA, validated against
+statsmodels SARIMAX).
 
 It fits and forecasts ARIMA(p, d, q) models. By default, coefficients are
 estimated with the Hannan-Rissanen method (pure linear algebra), so fitting is
@@ -87,26 +88,27 @@ forecast, err := model.Forecast(10)
 infinite value, and `Forecast` returns an error if the model has not been fitted
 yet.
 
-### Seasonal differencing
+### Seasonal models (SARIMA)
 
-For seasonal data with a known period `m`, add seasonal differencing
-`(1−Bᵐ)ᴰ`. `NewSARIMA` takes the seasonal differencing order `D` and period `m`;
-`AutoSARIMA` selects `D` (0 or 1, via the seasonal-strength test), then `d`, `p`,
-and `q` automatically:
+For seasonal data with a known period `m`, goarima fits the full multiplicative
+SARIMA `(p,d,q)(P,D,Q)ₘ` model — seasonal differencing `(1−Bᵐ)ᴰ` plus seasonal
+AR/MA factors `Φₛ(Bᵐ)`/`Θₛ(Bᵐ)`. `NewSARIMA` takes the seasonal orders `P, D, Q`
+and period `m`; `AutoSARIMA` selects `D` (via the seasonal-strength test), then
+`d`, `p`, `q`, `P`, and `Q` automatically:
 
 ```go
-// Explicit: ARIMA(1,1,0)(0,1,0) with period 12.
-model, err := goarima.NewSARIMA(1, 1, 0, 1, 12) // p, d, q, D, m
+// Explicit: the airline model ARIMA(0,1,1)(0,1,1) with period 12.
+model, err := goarima.NewSARIMA(0, 1, 1, 0, 1, 1, 12) // p, d, q, P, D, Q, m
 
-// Automatic: choose p, d, q, and D for a monthly (m=12) series.
-model, err := goarima.AutoSARIMA(series, 3, 1, 3, 12) // maxP, maxD, maxQ, m
+// Automatic: choose p, d, q, P, Q (and D) for a monthly (m=12) series.
+model, err := goarima.AutoSARIMA(series, 3, 1, 3, 1, 1, 12) // maxP, maxD, maxQ, maxBigP, maxBigQ, m
 ```
 
-`SeasonalOrders()` returns `(P, D, Q, m)`. This is the differencing half of the
-SARIMA `(p,d,q)(P,D,Q)ₘ` family; it is validated against statsmodels'
+`SeasonalOrders()` returns `(P, D, Q, m)`, and `SeasonalPhi()`/`SeasonalTheta()`
+return the seasonal AR/MA factors (`Phi()`/`Theta()` return the regular ones).
+The fit is validated against statsmodels'
 [SARIMAX](https://www.statsmodels.org/stable/generated/statsmodels.tsa.statespace.sarimax.SARIMAX.html)
-class (fit at `seasonal_order=(0,D,0,m)`). Seasonal *AR/MA* terms (`P`, `Q`) are
-not yet implemented (they return as 0); `AutoSARIMA` accepts the same options as
+class at `seasonal_order=(P,D,Q,m)`. `AutoSARIMA` accepts the same options as
 `AutoARIMA`.
 
 ### Coefficient refinement
@@ -249,19 +251,17 @@ inline and the exact settings used to generate them (`example/plot_seasonal.py`)
 
 ## Limitations
 
-This is an approximate implementation with seasonal *differencing* but not yet
-seasonal AR/MA. In particular:
+This is a pure-Go implementation that aims for clarity over completeness:
 
 - **Approximate by default.** The default Hannan-Rissanen fit is close to, but
   not identical to, statsmodels' default. The optional `WithMLE` refinement adds
   an exact Gaussian maximum-likelihood fit (Kalman filter), though small numeric
-  differences from statsmodels remain.
+  differences from statsmodels remain. For seasonal AR/MA models, the fast default
+  uses an approximate seasonal seed; `WithMLE` matches SARIMAX.
 - **Non-invertible/non-stationary fixed-order fits are rejected, not repaired.**
   `Fit` returns an error rather than estimating into the valid region, so some
   explicit `(p,d,q)` requests fail instead of producing a model.
-- **Seasonal differencing only.** `NewSARIMA`/`AutoSARIMA` handle the SARIMA
-  `(1−Bᵐ)ᴰ` operator (validated against statsmodels SARIMAX), but the
-  multiplicative seasonal AR/MA polynomials `(P, Q)` are not yet implemented.
+- **No exogenous regressors.** Models are univariate; there is no `X` term.
 
 ## Development
 
