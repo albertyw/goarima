@@ -153,6 +153,48 @@ func TestForecastExogValidatesShape(t *testing.T) {
 	}
 }
 
+func TestExogMLEImprovesOrMatches(t *testing.T) {
+	rng := rand.New(rand.NewSource(7))
+	n := 300
+	x := make([]float64, n)
+	y := make([]float64, n)
+	var eta float64
+	for i := 0; i < n; i++ {
+		x[i] = math.Cos(float64(i) / 4.0)
+		eta = 0.6*eta + rng.NormFloat64()*0.4
+		y[i] = -1.5*x[i] + eta
+	}
+	X := make([][]float64, n)
+	for i := range X {
+		X[i] = []float64{x[i]}
+	}
+	hr, _ := NewARIMA(1, 0, 1)
+	if err := hr.Fit(y, WithExog(X)); err != nil {
+		t.Fatal(err)
+	}
+	mle, _ := NewARIMA(1, 0, 1)
+	if err := mle.Fit(y, WithExog(X), WithMLE()); err != nil {
+		t.Fatal(err)
+	}
+	// β stays sensible and finite under joint refinement.
+	if b := mle.Beta(); len(b) != 1 || math.Abs(b[0]+1.5) > 0.3 {
+		t.Fatalf("MLE beta=%v, want ~[-1.5]", b)
+	}
+	// Refined residual variance is no worse than the HR seed's.
+	if mle.Sigma2() > hr.Sigma2()+1e-9 {
+		t.Fatalf("MLE sigma2 %v worse than HR %v", mle.Sigma2(), hr.Sigma2())
+	}
+	f, err := mle.ForecastExog(4, [][]float64{{0.1}, {0.2}, {0.3}, {0.4}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range f {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			t.Fatalf("non-finite forecast %v", f)
+		}
+	}
+}
+
 func TestForecastMethodMismatchErrors(t *testing.T) {
 	n := 60
 	X := make([][]float64, n)

@@ -120,6 +120,66 @@ func estimateExogBeta(series []float64, X [][]float64, d, bigD, period int) (bet
 	return beta, regressionResiduals(series, X, beta), nil
 }
 
+// centeredDiff applies the model's seasonal then regular differencing to a level
+// series and subtracts the mean, yielding the zero-mean stationary series the
+// ARMA estimators and the Kalman filter operate on.
+func centeredDiff(series []float64, d, bigD, period int) []float64 {
+	y := Difference(SeasonalDifference(series, period, bigD), d)
+	mu := mean(y)
+	z := make([]float64, len(y))
+	for i := range y {
+		z[i] = y[i] - mu
+	}
+	return z
+}
+
+// refineExog jointly refines the regression coefficients β and the ARMA factors
+// by minimizing the exact Gaussian NLL (mle) or the CSS over the packed vector
+// (β, φ, Φₛ, θ, Θₛ). For each trial it re-forms η = y − Xβ, differences and
+// centers it, and scores the expanded ARMA model. Non-stationary / non-invertible
+// factor vectors are penalized with +Inf; the seed is kept unless a stable point
+// strictly improves (nelderMeadRefine).
+func refineExog(series []float64, X [][]float64, beta, phi, sphi, theta, stheta []float64, d, bigD, period int, mle bool) (rbeta, rphi, rsphi, rtheta, rstheta []float64) {
+	k, p, P, q := len(beta), len(phi), len(sphi), len(theta)
+	kb := k
+	kp := k + p
+	kP := k + p + P
+	kq := k + p + P + q
+
+	seed := make([]float64, kq+len(stheta))
+	copy(seed[:kb], beta)
+	copy(seed[kb:kp], phi)
+	copy(seed[kp:kP], sphi)
+	copy(seed[kP:kq], theta)
+	copy(seed[kq:], stheta)
+
+	objective := func(x []float64) float64 {
+		b := x[:kb]
+		ph := x[kb:kp]
+		sp := x[kp:kP]
+		th := x[kP:kq]
+		st := x[kq:]
+		if !isStationary(ph) || !isStationary(sp) || !isInvertible(th) || !isInvertible(st) {
+			return math.Inf(1)
+		}
+		z := centeredDiff(regressionResiduals(series, X, b), d, bigD, period)
+		ephi := expandSeasonalAR(ph, sp, period)
+		etheta := expandSeasonalMA(th, st, period)
+		if mle {
+			return kalmanConcentratedNLL(z, ephi, etheta)
+		}
+		var s float64
+		for _, e := range armaResiduals(z, ephi, etheta) {
+			s += e * e
+		}
+		return s
+	}
+
+	best := nelderMeadRefine(seed, objective)
+	return copyFloats(best[:kb]), copyFloats(best[kb:kp]), copyFloats(best[kp:kP]),
+		copyFloats(best[kP:kq]), copyFloats(best[kq:])
+}
+
 // exogMean returns the regression mean futureX_i·β for each of the h forecast
 // rows, validating futureX is exactly h×len(beta).
 func exogMean(futureX [][]float64, beta []float64, h int) ([]float64, error) {

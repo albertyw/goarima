@@ -286,16 +286,45 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
 	// (φ, Φₛ, θ, Θₛ), then recompute the residuals so sigma2 and the stored lastE
 	// reflect the refined fit. MLE takes precedence over CSS when both are
 	// requested. The seasonal refiners reduce to the non-seasonal case when P=Q=0.
-	if len(phi)+len(theta)+len(sphi)+len(stheta) > 0 {
-		switch {
-		case cfg.mle:
-			phi, sphi, theta, stheta = refineSeasonalMLE(z, phi, sphi, theta, stheta, m.period)
-		case cfg.refine:
-			phi, sphi, theta, stheta = refineSeasonalCSS(z, phi, sphi, theta, stheta, m.period)
+	// With exog, β is refined jointly with the factors and η (and so the anchors
+	// and z) is rebuilt from the refined β.
+	if (cfg.mle || cfg.refine) && len(phi)+len(theta)+len(sphi)+len(stheta)+len(m.beta) > 0 {
+		if cfg.exog != nil {
+			m.beta, phi, sphi, theta, stheta = refineExog(
+				series, cfg.exog, m.beta, phi, sphi, theta, stheta,
+				m.d, m.bigD, m.period, cfg.mle)
+			// Refined β changes η; rebuild the level-scale fit series, anchors, and z.
+			fitSeries = regressionResiduals(series, cfg.exog, m.beta)
+			m.lastOrig = fitSeries[len(fitSeries)-1]
+			m.seasonalAnchors = make([][]float64, m.bigD)
+			s = fitSeries
+			for k := 0; k < m.bigD; k++ {
+				anchor := make([]float64, m.period)
+				copy(anchor, s[len(s)-m.period:])
+				m.seasonalAnchors[k] = anchor
+				s = SeasonalDifference(s, m.period, 1)
+			}
+			m.anchors = make([]float64, m.d)
+			cur = s
+			for k := 0; k < m.d; k++ {
+				m.anchors[k] = cur[len(cur)-1]
+				cur = Difference(cur, 1)
+			}
+			y = Difference(s, m.d)
+			m.mu = mean(y)
+			z = make([]float64, len(y))
+			for i := range y {
+				z[i] = y[i] - m.mu
+			}
+		} else {
+			switch {
+			case cfg.mle:
+				phi, sphi, theta, stheta = refineSeasonalMLE(z, phi, sphi, theta, stheta, m.period)
+			case cfg.refine:
+				phi, sphi, theta, stheta = refineSeasonalCSS(z, phi, sphi, theta, stheta, m.period)
+			}
 		}
-		if cfg.mle || cfg.refine {
-			residuals = armaResiduals(z, expandSeasonalAR(phi, sphi, m.period), expandSeasonalMA(theta, stheta, m.period))
-		}
+		residuals = armaResiduals(z, expandSeasonalAR(phi, sphi, m.period), expandSeasonalMA(theta, stheta, m.period))
 	}
 
 	m.phi = phi
