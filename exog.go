@@ -119,3 +119,69 @@ func estimateExogBeta(series []float64, X [][]float64, d, bigD, period int) (bet
 	}
 	return beta, regressionResiduals(series, X, beta), nil
 }
+
+// exogMean returns the regression mean futureX_i·β for each of the h forecast
+// rows, validating futureX is exactly h×len(beta).
+func exogMean(futureX [][]float64, beta []float64, h int) ([]float64, error) {
+	k := len(beta)
+	if len(futureX) != h {
+		return nil, fmt.Errorf("futureX has %d rows, want %d (the forecast horizon)", len(futureX), h)
+	}
+	out := make([]float64, h)
+	for i := 0; i < h; i++ {
+		if len(futureX[i]) != k {
+			return nil, fmt.Errorf("futureX row %d has width %d, want %d", i, len(futureX[i]), k)
+		}
+		var v float64
+		for j := 0; j < k; j++ {
+			v += futureX[i][j] * beta[j]
+		}
+		out[i] = v
+	}
+	return out, nil
+}
+
+// ForecastExog returns an h-step forecast that adds the regression mean of the
+// supplied future regressors. The model must have been fit with WithExog and
+// futureX must be exactly h×k (k = number of regressors at fit time).
+func (m *ARIMA) ForecastExog(h int, futureX [][]float64) ([]float64, error) {
+	if m.exogDim == 0 {
+		return nil, errors.New("model was not fit with exogenous regressors; use Forecast")
+	}
+	eta, err := m.forecastLevel(h)
+	if err != nil {
+		return nil, err
+	}
+	xb, err := exogMean(futureX, m.beta, h)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]float64, h)
+	for i := 0; i < h; i++ {
+		out[i] = eta[i] + xb[i]
+	}
+	return out, nil
+}
+
+// ForecastIntervalExog is ForecastInterval for an exog model: the η-scale band
+// (σ²·Σψ²) shifted by the future regression mean. β estimation uncertainty is
+// excluded, matching statsmodels' default conf_int.
+func (m *ARIMA) ForecastIntervalExog(h int, level float64, futureX [][]float64) (*Forecast, error) {
+	if m.exogDim == 0 {
+		return nil, errors.New("model was not fit with exogenous regressors; use ForecastInterval")
+	}
+	fc, err := m.forecastIntervalCore(h, level)
+	if err != nil {
+		return nil, err
+	}
+	xb, err := exogMean(futureX, m.beta, h)
+	if err != nil {
+		return nil, err
+	}
+	for i := 0; i < h; i++ {
+		fc.Point[i] += xb[i]
+		fc.Lower[i] += xb[i]
+		fc.Upper[i] += xb[i]
+	}
+	return fc, nil
+}

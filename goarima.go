@@ -327,7 +327,18 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
    Public API – Forecast
    --------------------------------------------------------------- */
 
+// Forecast returns the h-step point forecast on the original scale. Models fit
+// with exogenous regressors must use ForecastExog instead.
 func (m *ARIMA) Forecast(h int) ([]float64, error) {
+	if m.exogDim > 0 {
+		return nil, errors.New("model was fit with exogenous regressors; use ForecastExog")
+	}
+	return m.forecastLevel(h)
+}
+
+// forecastLevel is the exog-agnostic point forecast (the η scale when exog is in
+// use). ForecastExog adds the regression mean back to its output.
+func (m *ARIMA) forecastLevel(h int) ([]float64, error) {
 	if !m.fitted {
 		return nil, errors.New("model must be fitted before forecasting")
 	}

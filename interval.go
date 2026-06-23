@@ -22,10 +22,20 @@ type Forecast struct {
 // Var(k steps) = σ²·Σ_{j<k} ψ_j², with the differencing operators folded into the
 // AR side so the variances are on the original (integrated) scale.
 func (m *ARIMA) ForecastInterval(h int, level float64) (*Forecast, error) {
+	if m.exogDim > 0 {
+		return nil, errors.New("model was fit with exogenous regressors; use ForecastIntervalExog")
+	}
+	return m.forecastIntervalCore(h, level)
+}
+
+// forecastIntervalCore computes the prediction interval on the forecastLevel
+// scale (the η scale when exog is in use). ForecastIntervalExog shifts its
+// Point/Lower/Upper by the future regression mean.
+func (m *ARIMA) forecastIntervalCore(h int, level float64) (*Forecast, error) {
 	if level <= 0 || level >= 1 {
 		return nil, errors.New("confidence level must be in (0, 1)")
 	}
-	point, err := m.Forecast(h)
+	point, err := m.forecastLevel(h)
 	if err != nil {
 		return nil, err
 	}

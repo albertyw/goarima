@@ -98,3 +98,87 @@ func TestFitWithoutExogLeavesBetaEmpty(t *testing.T) {
 		t.Fatalf("Beta should be empty without exog, got %v", m.Beta())
 	}
 }
+
+func TestForecastExogRespondsToFutureX(t *testing.T) {
+	n := 120
+	x := make([]float64, n)
+	y := make([]float64, n)
+	for i := 0; i < n; i++ {
+		x[i] = float64(i % 7)
+		y[i] = 5*x[i] + math.Sin(float64(i))
+	}
+	X := make([][]float64, n)
+	for i := range X {
+		X[i] = []float64{x[i]}
+	}
+	m, _ := NewARIMA(1, 0, 0)
+	if err := m.Fit(y, WithExog(X)); err != nil {
+		t.Fatal(err)
+	}
+	low := [][]float64{{0}, {0}, {0}}
+	high := [][]float64{{10}, {10}, {10}}
+	fLow, err := m.ForecastExog(3, low)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fHigh, err := m.ForecastExog(3, high)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Each unit of x adds ~beta (~5) to the forecast; 10 units >> 0 units.
+	for i := 0; i < 3; i++ {
+		if fHigh[i] <= fLow[i]+30 {
+			t.Fatalf("step %d: high=%v not sufficiently above low=%v", i, fHigh[i], fLow[i])
+		}
+	}
+}
+
+func TestForecastExogValidatesShape(t *testing.T) {
+	n := 60
+	X := make([][]float64, n)
+	y := make([]float64, n)
+	for i := range X {
+		X[i] = []float64{float64(i), float64(i % 3)}
+		y[i] = float64(i) + math.Sin(float64(i))
+	}
+	m, _ := NewARIMA(1, 0, 0)
+	if err := m.Fit(y, WithExog(X)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.ForecastExog(3, [][]float64{{1, 1}, {1, 1}}); err == nil {
+		t.Error("wrong row count should error")
+	}
+	if _, err := m.ForecastExog(2, [][]float64{{1}, {1}}); err == nil {
+		t.Error("wrong column count should error")
+	}
+}
+
+func TestForecastMethodMismatchErrors(t *testing.T) {
+	n := 60
+	X := make([][]float64, n)
+	y := make([]float64, n)
+	for i := range X {
+		X[i] = []float64{float64(i % 4)}
+		y[i] = 2*float64(i%4) + math.Sin(float64(i))
+	}
+	exog, _ := NewARIMA(1, 0, 0)
+	if err := exog.Fit(y, WithExog(X)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := exog.Forecast(3); err == nil {
+		t.Error("Forecast on an exog model should error")
+	}
+	if _, err := exog.ForecastInterval(3, 0.95); err == nil {
+		t.Error("ForecastInterval on an exog model should error")
+	}
+	plain, _ := NewARIMA(1, 0, 0)
+	if err := plain.Fit(y); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := plain.ForecastExog(3, [][]float64{{1}, {1}, {1}}); err == nil {
+		t.Error("ForecastExog on a non-exog model should error")
+	}
+	if _, err := plain.ForecastIntervalExog(3, 0.95, [][]float64{{1}, {1}, {1}}); err == nil {
+		t.Error("ForecastIntervalExog on a non-exog model should error")
+	}
+}
