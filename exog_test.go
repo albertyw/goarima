@@ -264,6 +264,39 @@ func TestExogMLEImprovesOrMatches(t *testing.T) {
 	}
 }
 
+func TestAutoARIMAWithExogSelectsAndForecasts(t *testing.T) {
+	rng := rand.New(rand.NewSource(11))
+	n := 240
+	x := make([]float64, n)
+	y := make([]float64, n)
+	var eta float64
+	for i := 0; i < n; i++ {
+		x[i] = math.Sin(float64(i) / 6.0)
+		eta = 0.5*eta + rng.NormFloat64()*0.3
+		y[i] = 4*x[i] + eta
+	}
+	X := make([][]float64, n)
+	for i := range X {
+		X[i] = []float64{x[i]}
+	}
+	m, err := AutoARIMA(y, 3, 1, 3, WithExog(X))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b := m.Beta(); len(b) != 1 || math.Abs(b[0]-4) > 0.5 {
+		t.Fatalf("auto exog beta=%v, want ~[4]", b)
+	}
+	f, err := m.ForecastExog(3, [][]float64{{0.1}, {0.2}, {0.3}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range f {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			t.Fatalf("non-finite auto-exog forecast %v", f)
+		}
+	}
+}
+
 func TestForecastMethodMismatchErrors(t *testing.T) {
 	n := 60
 	X := make([][]float64, n)
