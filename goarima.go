@@ -25,6 +25,8 @@ type ARIMA struct {
 	anchors          []float64   // last value of s differenced 0..d-1 times (regular integration)
 	seasonalAnchors  [][]float64 // last m values of the series seasonally differenced 0..D-1 times
 	sigma2           float64     // variance of the residuals (not used in forecasting)
+	beta             []float64   // regression coefficients β (length k); nil when no exog
+	exogDim          int         // k — number of exogenous regressors (0 when no exog)
 	fitted           bool        // whether Fit has populated the coefficients/state
 }
 
@@ -104,6 +106,12 @@ func (m *ARIMA) SeasonalTheta() []float64 {
 	return copyFloats(m.seasonalTheta)
 }
 
+// Beta returns a copy of the exogenous regression coefficients (length k), or an
+// empty slice when the model was fit without exogenous regressors.
+func (m *ARIMA) Beta() []float64 {
+	return copyFloats(m.beta)
+}
+
 // LastY returns a copy of the last p differenced observations.
 func (m *ARIMA) LastY() []float64 {
 	return copyFloats(m.lastY)
@@ -140,11 +148,12 @@ func (m *ARIMA) Sigma2() float64 {
 // fitConfig holds optional Fit behavior toggled by FitOption values. The
 // criterion field is read only by AutoARIMA (Fit ignores it).
 type fitConfig struct {
-	refine    bool      // refine the Hannan-Rissanen estimate by minimizing the CSS
-	mle       bool      // refine the Hannan-Rissanen estimate by exact Gaussian MLE
-	criterion Criterion // AutoARIMA-only: information criterion to minimize
-	stepwise  bool      // AutoARIMA-only: use the stepwise search instead of the grid
-	parallel  bool      // AutoARIMA-only: fit candidate orders concurrently
+	refine    bool        // refine the Hannan-Rissanen estimate by minimizing the CSS
+	mle       bool        // refine the Hannan-Rissanen estimate by exact Gaussian MLE
+	criterion Criterion   // AutoARIMA-only: information criterion to minimize
+	stepwise  bool        // AutoARIMA-only: use the stepwise search instead of the grid
+	parallel  bool        // AutoARIMA-only: fit candidate orders concurrently
+	exog      [][]float64 // exogenous regressor matrix (nil when no exog)
 }
 
 // FitOption configures optional Fit behavior. The zero set of options keeps the
@@ -170,6 +179,14 @@ func WithCSSRefinement() FitOption {
 // MLE takes precedence.
 func WithMLE() FitOption {
 	return func(c *fitConfig) { c.mle = true }
+}
+
+// WithExog supplies an n×k matrix of exogenous regressors X (n = len(series)),
+// fitting regression with ARIMA errors: y_t = X_t·β + η_t, where η follows the
+// ARIMA model. The estimated β is available via Beta(); forecasts must use
+// ForecastExog / ForecastIntervalExog with the matching future regressors.
+func WithExog(X [][]float64) FitOption {
+	return func(c *fitConfig) { c.exog = X }
 }
 
 // WithCriterion selects the information criterion AutoARIMA minimizes during
@@ -208,13 +225,32 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
 		return err
 	}
 
-	// Remember the last value of the original series (for later undifferencing)
-	m.lastOrig = series[len(series)-1]
+	// Regression with ARIMA errors: estimate β, then fit the ARIMA pipeline on the
+	// residual series η = y − Xβ. With no exog this is a no-op (fitSeries == series).
+	m.beta = nil
+	m.exogDim = 0
+	fitSeries := series
+	if cfg.exog != nil {
+		k, err := validateExogMatrix(cfg.exog, len(series))
+		if err != nil {
+			return err
+		}
+		beta, eta, err := estimateExogBeta(series, cfg.exog, m.d, m.bigD, m.period)
+		if err != nil {
+			return fmt.Errorf("exog regression failed: %w", err)
+		}
+		m.beta = beta
+		m.exogDim = k
+		fitSeries = eta
+	}
+
+	// Remember the last value of the fitted series (for later undifferencing)
+	m.lastOrig = fitSeries[len(fitSeries)-1]
 
 	// 0. seasonal differencing: at each level record the last m values (the
 	//    anchor used to integrate forecasts back), then difference at lag m.
 	m.seasonalAnchors = make([][]float64, m.bigD)
-	s := series
+	s := fitSeries
 	for k := 0; k < m.bigD; k++ {
 		anchor := make([]float64, m.period)
 		copy(anchor, s[len(s)-m.period:])
