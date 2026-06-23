@@ -153,6 +153,75 @@ func TestForecastExogValidatesShape(t *testing.T) {
 	}
 }
 
+func TestSeasonalFitWithExogIsFinite(t *testing.T) {
+	rng := rand.New(rand.NewSource(99))
+	m := 12
+	n := 180
+	x := make([]float64, n)
+	y := make([]float64, n)
+	var eta float64
+	for i := 0; i < n; i++ {
+		x[i] = float64(i%m) / float64(m)
+		season := math.Sin(2 * math.Pi * float64(i) / float64(m))
+		eta = 0.4*eta + rng.NormFloat64()*0.3
+		y[i] = 3*x[i] + season + eta
+	}
+	X := make([][]float64, n)
+	for i := range X {
+		X[i] = []float64{x[i]}
+	}
+	model, err := NewSARIMA(1, 0, 0, 1, 0, 0, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := model.Fit(y, WithExog(X)); err != nil {
+		t.Fatal(err)
+	}
+	if b := model.Beta(); len(b) != 1 || math.Abs(b[0]-3) > 0.6 {
+		t.Fatalf("seasonal exog beta=%v, want ~[3]", b)
+	}
+	futureX := make([][]float64, m)
+	for i := range futureX {
+		futureX[i] = []float64{float64(i%m) / float64(m)}
+	}
+	f, err := model.ForecastExog(m, futureX)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range f {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			t.Fatalf("non-finite seasonal exog forecast %v", f)
+		}
+	}
+
+	// The joint refinement must also handle seasonal factors + β together.
+	mleModel, _ := NewSARIMA(1, 0, 0, 1, 0, 0, m)
+	if err := mleModel.Fit(y, WithExog(X), WithMLE()); err != nil {
+		t.Fatal(err)
+	}
+	fm, err := mleModel.ForecastExog(m, futureX)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range fm {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			t.Fatalf("non-finite seasonal exog MLE forecast %v", fm)
+		}
+	}
+}
+
+func TestSeasonalExogDifferencing(t *testing.T) {
+	// With D=1,m=4,d=1, differenceExog must drop m+1 rows (seasonal then regular).
+	X := make([][]float64, 20)
+	for i := range X {
+		X[i] = []float64{float64(i), float64(i * i)}
+	}
+	got := differenceExog(X, 1, 1, 4)
+	if want := 20 - 4 - 1; len(got) != want {
+		t.Fatalf("rows: got %d want %d", len(got), want)
+	}
+}
+
 func TestExogMLEImprovesOrMatches(t *testing.T) {
 	rng := rand.New(rand.NewSource(7))
 	n := 300
