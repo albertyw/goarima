@@ -6,6 +6,8 @@ maximum-likelihood reference at the same orders:
 - **ARIMA (non-seasonal)** — `AutoARIMA` vs [pmdarima](https://alkaline-ml.com/pmdarima/).
 - **Prediction intervals** — `ForecastInterval` confidence bands vs pmdarima's.
 - **Seasonal models (SARIMAX)** — `AutoSARIMA` vs statsmodels **SARIMAX**.
+- **Regression with ARIMA errors** — `WithExog` / `ForecastExog` vs statsmodels
+  **SARIMAX** with `exog=`.
 
 In every chart the grey line is the observed history, the dashed line marks the
 last observation, and the two coloured lines are the forecasts continuing from it.
@@ -16,8 +18,9 @@ All orders are goarima's *automatic* choices, not hard-coded.
 1. `example/main.go` runs `AutoARIMA` (and `AutoSARIMA`) on each series and prints
    a `[goarima] <name> ARIMA(p,d,q)` block — and, for the seasonal datasets, a
    `[goarima-seasonal] <name> ARIMA(p,d,q)(P,D,Q)[m]` block — with the forecast.
-2. `example/plot_compare.py`, `example/plot_interval.py`, and
-   `example/plot_seasonal.py` parse those blocks, fit the reference (pmdarima /
+2. `example/plot_compare.py`, `example/plot_interval.py`,
+   `example/plot_seasonal.py`, and `example/plot_exog.py` parse those blocks
+   (`plot_exog.py` reads the `[goarima-exog]` block), fit the reference (pmdarima /
    statsmodels SARIMAX) at the same orders, and plot each series' history with both
    forecasts (and, for `plot_interval.py`, the prediction bands).
 
@@ -207,7 +210,46 @@ likelihood) — the same drift difference documented in the integration tests.
 
 ---
 
-> **Note.** goarima implements the full multiplicative SARIMA
-> `(p, d, q)(P, D, Q)ₘ` family (validated against statsmodels SARIMAX); it does not
-> implement exogenous regressors (the **X** in SARIMAX). See
-> [`docs/arima.md`](arima.md) §7 for the details.
+## Regression with ARIMA errors (SARIMAX exog)
+
+The **X** in SARIMAX: external predictors that drive the series alongside its own
+ARIMA dynamics. goarima fits *regression with ARIMA errors* —
+`yₜ = Xₜ·β + ηₜ`, where the regression mean `Xₜ·β` captures the covariate effect
+and the residual `ηₜ` follows the ARIMA model — which is exactly how statsmodels
+SARIMAX with `exog=` and `trend="n"` parameterizes it.
+
+Supply the `n×k` regressor matrix at fit time with `WithExog`, read the estimated
+coefficients with `Beta()`, and forecast with `ForecastExog` (or
+`ForecastIntervalExog`), passing the future regressor rows:
+
+```go
+series, _ := /* the target yₜ */
+X := /* n×k matrix, one row of regressors per observation */
+model, _ := goarima.NewARIMA(1, 0, 0)
+model.Fit(series, goarima.WithExog(X), goarima.WithMLE())
+beta := model.Beta()                       // estimated β
+forecast, _ := model.ForecastExog(12, futureX) // futureX is h×k
+```
+
+The chart below uses a synthetic demand series `yₜ = 10 + 2.5·xₜ + ηₜ` whose
+covariate `xₜ` is a positive seasonal signal (think marketing spend) and whose
+errors `ηₜ` are AR(1). goarima recovers `β ≈ 2.50` and its forecast tracks the
+*future* covariate cycle; statsmodels SARIMAX at the same order lands on top of it.
+A plain ARIMA(1,0,0) on the same series — with no knowledge of the covariate —
+simply reverts to the series mean:
+
+![Regression with ARIMA errors: the covariate drives the forecast](images/exog.png)
+
+This is the key distinction from a seasonal model: an exogenous regressor lets the
+forecast respond to *known future inputs* (a planned price, a scheduled campaign, a
+weather forecast) rather than only the series' own past. Prediction intervals from
+`ForecastIntervalExog` carry the same `σ²·Σψ²` error variance as the non-exog case
+(β-estimation uncertainty is excluded, matching statsmodels' default `conf_int`).
+
+`AutoARIMA` and `AutoSARIMA` accept `WithExog` too — they net the regressors out
+before choosing the differencing orders, then re-estimate β at each candidate fit.
+
+> **Note.** goarima now implements the full SARIMAX family: the multiplicative
+> SARIMA `(p, d, q)(P, D, Q)ₘ` dynamics *and* exogenous regressors (the **X**),
+> all validated against statsmodels SARIMAX. See [`docs/arima.md`](arima.md) §7 for
+> the details.

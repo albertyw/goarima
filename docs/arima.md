@@ -328,7 +328,7 @@ expensive, e.g. under `WithMLE`).
 
 ---
 
-## 7. Seasonal differencing (SARIMA)
+## 7. Seasonal models and exogenous regressors (SARIMAX)
 
 Many series repeat on a fixed period `m` (12 for monthly data with a yearly
 cycle, 4 for quarterly). A seasonal difference subtracts the value one season
@@ -384,9 +384,45 @@ four-dimensional grid (the seasonal orders are capped small, `0..1` by default).
 
 This is the full **SARIMA** `(p, d, q)(P, D, Q)ₘ` family. goarima validates it
 against statsmodels' **SARIMAX** class (Seasonal ARIMA with eXogenous regressors)
-— the reference the integration suite fits at `seasonal_order=(P, D, Q, m)` —
-which reduces to plain seasonal ARIMA when, as here, there are no exogenous
-regressors (the one piece goarima does not implement).
+— the reference the integration suite fits at `seasonal_order=(P, D, Q, m)`. The
+final letter, the eXogenous regressors, is covered next.
+
+### Exogenous regressors — the X in SARIMAX
+
+Sometimes the series is driven not only by its own past but by *external*
+predictors known for the future too — a planned price, a scheduled campaign, a
+weather forecast. goarima models these as **regression with ARIMA errors**:
+
+```
+y_t = X_t·β + η_t,   where η_t follows the ARIMA(p,d,q)(P,D,Q)ₘ model.
+```
+
+The regression mean `X_t·β` absorbs the covariate effect; whatever structure is
+left over, the error `η_t`, is fit by the usual ARIMA machinery. This is exactly
+how statsmodels SARIMAX with `exog=` and `trend="n"` parameterizes it (it is
+*regression with ARIMA errors*, not ARIMA**X** — the regressors enter
+contemporaneously, not as extra lagged terms).
+
+goarima estimates it in two steps: difference `y` and each column of `X` by the
+model's orders, fit `β` by ordinary least squares on the differenced data, then run
+the whole ARIMA pipeline on the level-scale residual series `η = y − Xβ`. Under
+`WithMLE` / `WithCSSRefinement`, `β` is *not* left at its OLS seed — it joins the
+ARMA coefficients in the Nelder-Mead parameter vector and is re-estimated jointly
+(each trial re-forms `η` from the current `β`), matching SARIMAX's joint fit.
+
+```go
+model, _ := goarima.NewARIMA(1, 0, 0)
+model.Fit(series, goarima.WithExog(X), goarima.WithMLE()) // X is n×k
+beta := model.Beta()                                       // estimated β
+forecast, _ := model.ForecastExog(h, futureX)              // futureX is h×k
+```
+
+A forecast then adds the regression mean of the *supplied future* regressors back
+onto the ARIMA forecast of `η`, so the prediction responds to known future inputs.
+`ForecastIntervalExog` shifts the `σ²·Σψ²` band (§5) by that same mean; the band
+excludes the uncertainty in `β` itself, matching statsmodels' default `conf_int`.
+`WithExog` works with `NewSARIMA` and threads through `AutoARIMA`/`AutoSARIMA`,
+which net `X` out before choosing the differencing orders.
 
 ---
 
@@ -402,8 +438,6 @@ leaves out things a production statistics package would include:
 - **Unstable fits are rejected, not repaired.** If an explicit `(p,d,q)` lands
   outside the stationary/invertible region, `Fit` returns an error instead of
   re-estimating into the valid region.
-- **No exogenous regressors.** Models are univariate; there is no `X` term — the
-  one piece of statsmodels' SARIMA**X** goarima does not implement.
 
 See the project README's *Limitations* section for the current list.
 

@@ -7,9 +7,9 @@
 ![Sunspots forecast comparison](docs/images/sunspots.png)
 
 A pure-Go implementation of ARIMA (AutoRegressive Integrated Moving Average)
-time-series modeling, with automatic order selection, prediction intervals, and
-full multiplicative seasonal `(p,d,q)(P,D,Q)ₘ` models (SARIMA, validated against
-statsmodels SARIMAX).
+time-series modeling, with automatic order selection, prediction intervals,
+full multiplicative seasonal `(p,d,q)(P,D,Q)ₘ` models, and exogenous regressors
+(the full SARIMAX family, validated against statsmodels SARIMAX).
 
 It fits and forecasts ARIMA(p, d, q) models. By default, coefficients are
 estimated with the Hannan-Rissanen method (pure linear algebra), so fitting is
@@ -111,6 +111,29 @@ The fit is validated against statsmodels'
 class at `seasonal_order=(P,D,Q,m)`. `AutoSARIMA` accepts the same options as
 `AutoARIMA`.
 
+### Exogenous regressors (SARIMAX)
+
+To let external predictors drive the series, pass an `n×k` regressor matrix `X`
+with `WithExog`. goarima fits *regression with ARIMA errors*,
+`yₜ = Xₜ·β + ηₜ`, where `ηₜ` follows the ARIMA model — the same parameterization
+as statsmodels SARIMAX with `exog=` and `trend="n"`. Read the coefficients with
+`Beta()` and forecast with `ForecastExog` / `ForecastIntervalExog`, supplying the
+future regressor rows (`h×k`):
+
+```go
+model, err := goarima.NewARIMA(1, 0, 0)
+err = model.Fit(series, goarima.WithExog(X), goarima.WithMLE())
+beta := model.Beta()                          // estimated β (length k)
+forecast, err := model.ForecastExog(12, futureX) // futureX is 12×k
+fc, err := model.ForecastIntervalExog(12, 0.95, futureX)
+```
+
+`β` is estimated jointly with the ARMA coefficients under `WithMLE` /
+`WithCSSRefinement` (a two-step OLS seed otherwise). `WithExog` also works with
+`NewSARIMA` and threads through `AutoARIMA` / `AutoSARIMA`. A model fit with
+exogenous regressors must use `ForecastExog` rather than `Forecast` (and
+vice-versa); calling the wrong one returns an error.
+
 ### Coefficient refinement
 
 By default `Fit` uses the Hannan-Rissanen estimate. Two opt-in options refine it
@@ -181,6 +204,7 @@ The interval widths match statsmodels' `get_forecast().conf_int()`.
 model.Orders()   // (p, d, q)
 model.Phi()      // AR coefficients (copy)
 model.Theta()    // MA coefficients (copy)
+model.Beta()     // exogenous regression coefficients (copy; empty without WithExog)
 model.Sigma2()   // residual variance
 ```
 
@@ -249,6 +273,16 @@ inline and the exact settings used to generate them (`example/plot_seasonal.py`)
 |---|---|
 | ![AirPassengers seasonal forecast](docs/images/airpassengers_seasonal.png) | ![WineInd seasonal forecast](docs/images/wineind_seasonal.png) |
 
+### Regression with ARIMA errors (SARIMAX exog)
+
+[`docs/examples.md`](docs/examples.md) also walks through an exogenous-regressor
+example (`example/plot_exog.py`): a covariate-driven demand series where
+`WithExog` lets the `ForecastExog` forecast track a known future covariate while a
+plain ARIMA reverts to the mean. goarima's exog forecast lands on top of
+statsmodels SARIMAX at the same order.
+
+![Regression with ARIMA errors](docs/images/exog.png)
+
 ## Limitations
 
 This is a pure-Go implementation that aims for clarity over completeness:
@@ -261,7 +295,6 @@ This is a pure-Go implementation that aims for clarity over completeness:
 - **Non-invertible/non-stationary fixed-order fits are rejected, not repaired.**
   `Fit` returns an error rather than estimating into the valid region, so some
   explicit `(p,d,q)` requests fail instead of producing a model.
-- **No exogenous regressors.** Models are univariate; there is no `X` term.
 
 ## Development
 
