@@ -4,6 +4,7 @@ import (
 	"bufio"
 	_ "embed"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -157,6 +158,53 @@ func printInterval(key, orderLabel string, model *goarima.ARIMA, horizon int, le
 	fmt.Println()
 }
 
+// exogExample builds a deterministic "demand driven by a covariate" series for
+// the regression-with-ARIMA-errors demo: y_t = 10 + 2.5·x_t + η_t, where x is a
+// positive seasonal covariate (think marketing spend) and η is AR(1) momentum
+// with phi≈0.6. It returns the target y, the n×1 design matrix X, and an h×1
+// matrix of future covariate values continuing the same cycle. plot_exog.py
+// regenerates these from the identical closed form, so keep the two in sync.
+func exogExample(n, h int) (y []float64, X, futureX [][]float64) {
+	cov := func(i int) float64 { return 1.0 + math.Sin(2*math.Pi*float64(i)/12.0) }
+	y = make([]float64, n)
+	X = make([][]float64, n)
+	var eta float64
+	for i := 0; i < n; i++ {
+		eta = 0.6*eta + 0.3*math.Sin(float64(i)*1.7) // deterministic AR(1) errors
+		y[i] = 10 + 2.5*cov(i) + eta
+		X[i] = []float64{cov(i)}
+	}
+	futureX = make([][]float64, h)
+	for i := 0; i < h; i++ {
+		futureX[i] = []float64{cov(n + i)}
+	}
+	return y, X, futureX
+}
+
+// printExog fits a model with WithExog (+MLE) and prints one [goarima-exog]
+// block: the order, the estimated regression coefficients Beta(), and the
+// ForecastExog at the supplied future covariate. The distinct prefix keeps it out
+// of compare.py (which matches [goarima]); plot_exog.py parses it.
+func printExog(name string, p, d, q, horizon int, y []float64, X, futureX [][]float64) {
+	model, err := goarima.NewARIMA(p, d, q)
+	if err != nil {
+		fmt.Printf("[goarima-exog] %s: %v\n", name, err)
+		return
+	}
+	if err := model.Fit(y, goarima.WithExog(X), goarima.WithMLE()); err != nil {
+		fmt.Printf("[goarima-exog] %s: %v\n", name, err)
+		return
+	}
+	forecast, err := model.ForecastExog(horizon, futureX)
+	if err != nil {
+		fmt.Printf("[goarima-exog] %s: %v\n", name, err)
+		return
+	}
+	fmt.Printf("[goarima-exog] %s  ARIMA(%d,%d,%d)\n", name, p, d, q)
+	fmt.Printf("  beta:     %.4f\n", model.Beta())
+	fmt.Printf("  forecast: %.4f\n\n", forecast)
+}
+
 // mustParse parses an embedded dataset, exiting on the (unexpected) error.
 func mustParse(name, csv string) []float64 {
 	series, err := parseSeries(csv)
@@ -203,4 +251,11 @@ func main() {
 	if m, label, err := fitAutoMLE(lynx); err == nil {
 		printInterval("Lynx", label, m, 20, 0.80, 0.95)
 	}
+
+	fmt.Println("# Regression with ARIMA errors (goarima; compared against statsmodels SARIMAX)")
+	fmt.Println()
+	// A covariate-driven demand series: the exog forecast tracks the future
+	// covariate, while a plain ARIMA reverts to the series mean (see plot_exog.py).
+	y, X, futureX := exogExample(144, 12)
+	printExog("Demand", 1, 0, 0, 12, y, X, futureX)
 }

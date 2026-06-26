@@ -25,6 +25,8 @@ type ARIMA struct {
 	anchors          []float64   // last value of s differenced 0..d-1 times (regular integration)
 	seasonalAnchors  [][]float64 // last m values of the series seasonally differenced 0..D-1 times
 	sigma2           float64     // variance of the residuals (not used in forecasting)
+	beta             []float64   // regression coefficients β (length k); nil when no exog
+	exogDim          int         // k — number of exogenous regressors (0 when no exog)
 	fitted           bool        // whether Fit has populated the coefficients/state
 }
 
@@ -104,6 +106,12 @@ func (m *ARIMA) SeasonalTheta() []float64 {
 	return copyFloats(m.seasonalTheta)
 }
 
+// Beta returns a copy of the exogenous regression coefficients (length k), or an
+// empty slice when the model was fit without exogenous regressors.
+func (m *ARIMA) Beta() []float64 {
+	return copyFloats(m.beta)
+}
+
 // LastY returns a copy of the last p differenced observations.
 func (m *ARIMA) LastY() []float64 {
 	return copyFloats(m.lastY)
@@ -140,11 +148,12 @@ func (m *ARIMA) Sigma2() float64 {
 // fitConfig holds optional Fit behavior toggled by FitOption values. The
 // criterion field is read only by AutoARIMA (Fit ignores it).
 type fitConfig struct {
-	refine    bool      // refine the Hannan-Rissanen estimate by minimizing the CSS
-	mle       bool      // refine the Hannan-Rissanen estimate by exact Gaussian MLE
-	criterion Criterion // AutoARIMA-only: information criterion to minimize
-	stepwise  bool      // AutoARIMA-only: use the stepwise search instead of the grid
-	parallel  bool      // AutoARIMA-only: fit candidate orders concurrently
+	refine    bool        // refine the Hannan-Rissanen estimate by minimizing the CSS
+	mle       bool        // refine the Hannan-Rissanen estimate by exact Gaussian MLE
+	criterion Criterion   // AutoARIMA-only: information criterion to minimize
+	stepwise  bool        // AutoARIMA-only: use the stepwise search instead of the grid
+	parallel  bool        // AutoARIMA-only: fit candidate orders concurrently
+	exog      [][]float64 // exogenous regressor matrix (nil when no exog)
 }
 
 // FitOption configures optional Fit behavior. The zero set of options keeps the
@@ -170,6 +179,14 @@ func WithCSSRefinement() FitOption {
 // MLE takes precedence.
 func WithMLE() FitOption {
 	return func(c *fitConfig) { c.mle = true }
+}
+
+// WithExog supplies an n×k matrix of exogenous regressors X (n = len(series)),
+// fitting regression with ARIMA errors: y_t = X_t·β + η_t, where η follows the
+// ARIMA model. The estimated β is available via Beta(); forecasts must use
+// ForecastExog / ForecastIntervalExog with the matching future regressors.
+func WithExog(X [][]float64) FitOption {
+	return func(c *fitConfig) { c.exog = X }
 }
 
 // WithCriterion selects the information criterion AutoARIMA minimizes during
@@ -208,13 +225,32 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
 		return err
 	}
 
-	// Remember the last value of the original series (for later undifferencing)
-	m.lastOrig = series[len(series)-1]
+	// Regression with ARIMA errors: estimate β, then fit the ARIMA pipeline on the
+	// residual series η = y − Xβ. With no exog this is a no-op (fitSeries == series).
+	m.beta = nil
+	m.exogDim = 0
+	fitSeries := series
+	if cfg.exog != nil {
+		k, err := validateExogMatrix(cfg.exog, len(series))
+		if err != nil {
+			return err
+		}
+		beta, eta, err := estimateExogBeta(series, cfg.exog, m.d, m.bigD, m.period)
+		if err != nil {
+			return fmt.Errorf("exog regression failed: %w", err)
+		}
+		m.beta = beta
+		m.exogDim = k
+		fitSeries = eta
+	}
+
+	// Remember the last value of the fitted series (for later undifferencing)
+	m.lastOrig = fitSeries[len(fitSeries)-1]
 
 	// 0. seasonal differencing: at each level record the last m values (the
 	//    anchor used to integrate forecasts back), then difference at lag m.
 	m.seasonalAnchors = make([][]float64, m.bigD)
-	s := series
+	s := fitSeries
 	for k := 0; k < m.bigD; k++ {
 		anchor := make([]float64, m.period)
 		copy(anchor, s[len(s)-m.period:])
@@ -250,16 +286,45 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
 	// (φ, Φₛ, θ, Θₛ), then recompute the residuals so sigma2 and the stored lastE
 	// reflect the refined fit. MLE takes precedence over CSS when both are
 	// requested. The seasonal refiners reduce to the non-seasonal case when P=Q=0.
-	if len(phi)+len(theta)+len(sphi)+len(stheta) > 0 {
-		switch {
-		case cfg.mle:
-			phi, sphi, theta, stheta = refineSeasonalMLE(z, phi, sphi, theta, stheta, m.period)
-		case cfg.refine:
-			phi, sphi, theta, stheta = refineSeasonalCSS(z, phi, sphi, theta, stheta, m.period)
+	// With exog, β is refined jointly with the factors and η (and so the anchors
+	// and z) is rebuilt from the refined β.
+	if (cfg.mle || cfg.refine) && len(phi)+len(theta)+len(sphi)+len(stheta)+len(m.beta) > 0 {
+		if cfg.exog != nil {
+			m.beta, phi, sphi, theta, stheta = refineExog(
+				series, cfg.exog, m.beta, phi, sphi, theta, stheta,
+				m.d, m.bigD, m.period, cfg.mle)
+			// Refined β changes η; rebuild the level-scale fit series, anchors, and z.
+			fitSeries = regressionResiduals(series, cfg.exog, m.beta)
+			m.lastOrig = fitSeries[len(fitSeries)-1]
+			m.seasonalAnchors = make([][]float64, m.bigD)
+			s = fitSeries
+			for k := 0; k < m.bigD; k++ {
+				anchor := make([]float64, m.period)
+				copy(anchor, s[len(s)-m.period:])
+				m.seasonalAnchors[k] = anchor
+				s = SeasonalDifference(s, m.period, 1)
+			}
+			m.anchors = make([]float64, m.d)
+			cur = s
+			for k := 0; k < m.d; k++ {
+				m.anchors[k] = cur[len(cur)-1]
+				cur = Difference(cur, 1)
+			}
+			y = Difference(s, m.d)
+			m.mu = mean(y)
+			z = make([]float64, len(y))
+			for i := range y {
+				z[i] = y[i] - m.mu
+			}
+		} else {
+			switch {
+			case cfg.mle:
+				phi, sphi, theta, stheta = refineSeasonalMLE(z, phi, sphi, theta, stheta, m.period)
+			case cfg.refine:
+				phi, sphi, theta, stheta = refineSeasonalCSS(z, phi, sphi, theta, stheta, m.period)
+			}
 		}
-		if cfg.mle || cfg.refine {
-			residuals = armaResiduals(z, expandSeasonalAR(phi, sphi, m.period), expandSeasonalMA(theta, stheta, m.period))
-		}
+		residuals = armaResiduals(z, expandSeasonalAR(phi, sphi, m.period), expandSeasonalMA(theta, stheta, m.period))
 	}
 
 	m.phi = phi
@@ -291,7 +356,18 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
    Public API – Forecast
    --------------------------------------------------------------- */
 
+// Forecast returns the h-step point forecast on the original scale. Models fit
+// with exogenous regressors must use ForecastExog instead.
 func (m *ARIMA) Forecast(h int) ([]float64, error) {
+	if m.exogDim > 0 {
+		return nil, errors.New("model was fit with exogenous regressors; use ForecastExog")
+	}
+	return m.forecastLevel(h)
+}
+
+// forecastLevel is the exog-agnostic point forecast (the η scale when exog is in
+// use). ForecastExog adds the regression mean back to its output.
+func (m *ARIMA) forecastLevel(h int) ([]float64, error) {
 	if !m.fitted {
 		return nil, errors.New("model must be fitted before forecasting")
 	}

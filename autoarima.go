@@ -39,7 +39,19 @@ func AutoARIMA(series []float64, maxP, maxD, maxQ int, opts ...FitOption) (*ARIM
 		opt(&cfg)
 	}
 
-	d := selectD(series, maxD)
+	dSeries := series
+	if cfg.exog != nil {
+		if _, err := validateExogMatrix(cfg.exog, len(series)); err != nil {
+			return nil, fmt.Errorf("AutoARIMA: %w", err)
+		}
+		// Provisional level-scale β to net X out for differencing selection only;
+		// each candidate Fit re-estimates β properly at the chosen d.
+		if b0, err := olsBeta(series, cfg.exog); err == nil {
+			dSeries = regressionResiduals(series, cfg.exog, b0)
+		}
+	}
+
+	d := selectD(dSeries, maxD)
 	space := searchSpace{
 		series: series,
 		d:      d,
@@ -101,8 +113,18 @@ func AutoSARIMA(series []float64, maxP, maxD, maxQ, maxBigP, maxBigQ, m int, opt
 		opt(&cfg)
 	}
 
-	bigD := selectSeasonalD(series, m)
-	s := SeasonalDifference(series, m, bigD)
+	dSeries := series
+	if cfg.exog != nil {
+		if _, err := validateExogMatrix(cfg.exog, len(series)); err != nil {
+			return nil, fmt.Errorf("AutoSARIMA: %w", err)
+		}
+		if b0, err := olsBeta(series, cfg.exog); err == nil {
+			dSeries = regressionResiduals(series, cfg.exog, b0)
+		}
+	}
+
+	bigD := selectSeasonalD(dSeries, m)
+	s := SeasonalDifference(dSeries, m, bigD)
 	d := selectD(s, maxD)
 
 	space := searchSpace{

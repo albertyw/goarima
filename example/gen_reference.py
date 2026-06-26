@@ -175,6 +175,60 @@ def interval_fit(series, order, horizon, alpha):
     }
 
 
+def exog_reference() -> dict:
+    """Build a synthetic regression-with-ARIMA-errors series and fit it with
+    statsmodels SARIMAX(exog=...). Captures β, the AR/MA factors, and a forecast
+    (plus conf_int) at supplied future regressors. d==0 so forecast levels are
+    directly comparable. The data is embedded so the Go test fits identical y/X."""
+    rng = np.random.default_rng(20260622)
+    n = 200
+    order = (1, 0, 0)
+    horizon = 6
+    alpha = 0.05
+
+    x1 = np.sin(np.arange(n) / 5.0)
+    x2 = (np.arange(n) % 7).astype(float)
+    eta = np.zeros(n)
+    for i in range(1, n):
+        eta[i] = 0.5 * eta[i - 1] + rng.normal(scale=0.3)
+    y = 2.0 * x1 - 1.0 * x2 + eta
+    X = np.column_stack([x1, x2])
+
+    fx1 = np.sin(np.arange(n, n + horizon) / 5.0)
+    fx2 = (np.arange(n, n + horizon) % 7).astype(float)
+    fX = np.column_stack([fx1, fx2])
+
+    res = sm.tsa.statespace.SARIMAX(
+        y,
+        exog=X,
+        order=order,
+        trend="n",
+        enforce_stationarity=False,
+        enforce_invertibility=False,
+    ).fit(disp=False)
+    named = dict(zip(res.param_names, res.params))
+    beta = [v for n_, v in named.items() if not n_.startswith(("ar.", "ma.", "sigma2"))]
+    phi = [v for n_, v in named.items() if n_.startswith("ar.L")]
+    theta = [v for n_, v in named.items() if n_.startswith("ma.L")]
+
+    fc = res.get_forecast(steps=horizon, exog=fX)
+    ci = np.asarray(fc.conf_int(alpha=alpha))
+    return {
+        "order": list(order),
+        "horizon": horizon,
+        "alpha": alpha,
+        "x": X.tolist(),
+        "y": y.tolist(),
+        "future_x": fX.tolist(),
+        "beta": [float(v) for v in beta],
+        "phi": [float(v) for v in phi],
+        "theta": [float(v) for v in theta],
+        "forecast": [float(v) for v in np.asarray(fc.predicted_mean)],
+        "lower": [float(v) for v in ci[:, 0]],
+        "upper": [float(v) for v in ci[:, 1]],
+    }
+
+
 def main() -> None:
     fixtures = {
         "_meta": {
@@ -195,6 +249,7 @@ def main() -> None:
         "interval": {
             name: interval_fit(s, o, h, a) for name, s, o, h, a in INTERVAL
         },
+        "exog": exog_reference(),
     }
     os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
     with open(OUT_PATH, "w") as handle:
