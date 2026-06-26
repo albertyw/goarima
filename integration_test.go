@@ -133,6 +133,24 @@ type refSeasonalARMAFit struct {
 	Forecast      []float64 `json:"forecast"`
 }
 
+// refExogFit is the statsmodels SARIMAX(exog=...) fixture: a synthetic
+// regression-with-ARIMA-errors series (embedded) with its β, AR/MA factors, and
+// a forecast + conf_int at supplied future regressors.
+type refExogFit struct {
+	Order    []int       `json:"order"`
+	Horizon  int         `json:"horizon"`
+	Alpha    float64     `json:"alpha"`
+	X        [][]float64 `json:"x"`
+	Y        []float64   `json:"y"`
+	FutureX  [][]float64 `json:"future_x"`
+	Beta     []float64   `json:"beta"`
+	Phi      []float64   `json:"phi"`
+	Theta    []float64   `json:"theta"`
+	Forecast []float64   `json:"forecast"`
+	Lower    []float64   `json:"lower"`
+	Upper    []float64   `json:"upper"`
+}
+
 // refFixture is the whole committed pmdarima_reference.json document.
 type refFixture struct {
 	Meta          map[string]string             `json:"_meta"`
@@ -141,6 +159,7 @@ type refFixture struct {
 	SeasonalFixed map[string]refSeasonalFit     `json:"seasonal_fixed"`
 	SeasonalARMA  map[string]refSeasonalARMAFit `json:"seasonal_arma"`
 	Interval      map[string]refIntervalFit     `json:"interval"`
+	Exog          refExogFit                    `json:"exog"`
 }
 
 // loadReference parses the embedded pmdarima fixture (no Python at test time).
@@ -487,6 +506,34 @@ func TestForecastIntervalMatchesStatsmodels(t *testing.T) {
 				assert.InDeltaf(t, wantHalf, gotHalf, 0.03*wantHalf, "half-width[%d]", k)
 			}
 		})
+	}
+}
+
+// TestExogMatchesStatsmodels checks goarima's regression-with-ARIMA-errors fit
+// against statsmodels SARIMAX(exog=...). The reference uses d==0 so the forecast
+// levels are directly comparable; β is identified by the regression, and the
+// interval half-widths isolate the σ²·Σψ² variance from the regression mean.
+func TestExogMatchesStatsmodels(t *testing.T) {
+	ref := loadReference(t)
+	e := ref.Exog
+	model, err := goarima.NewARIMA(e.Order[0], e.Order[1], e.Order[2])
+	require.NoError(t, err)
+	require.NoError(t, model.Fit(e.Y, goarima.WithExog(e.X), goarima.WithMLE()))
+
+	assertCoeffsClose(t, "beta", e.Beta, model.Beta(), 0.05)
+	assertCoeffsClose(t, "phi", e.Phi, model.Phi(), 0.05)
+
+	fc, err := model.ForecastExog(e.Horizon, e.FutureX)
+	require.NoError(t, err)
+	assertForecastClose(t, e.Forecast, fc, 0.05)
+
+	iv, err := model.ForecastIntervalExog(e.Horizon, 1-e.Alpha, e.FutureX)
+	require.NoError(t, err)
+	for k := range iv.Point {
+		assert.Less(t, iv.Lower[k], iv.Upper[k], "step %d ordered", k+1)
+		wantHalf := (e.Upper[k] - e.Lower[k]) / 2
+		gotHalf := (iv.Upper[k] - iv.Lower[k]) / 2
+		assert.InDeltaf(t, wantHalf, gotHalf, 0.10*wantHalf, "half-width[%d]", k)
 	}
 }
 

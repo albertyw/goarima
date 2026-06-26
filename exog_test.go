@@ -153,6 +153,92 @@ func TestForecastExogValidatesShape(t *testing.T) {
 	}
 }
 
+func TestOLSBetaErrors(t *testing.T) {
+	if _, err := olsBeta(nil, nil); err == nil {
+		t.Error("empty design matrix should error")
+	}
+	// Two columns but only two rows: rows <= cols.
+	if _, err := olsBeta([]float64{1, 2}, [][]float64{{1, 0}, {0, 1}}); err == nil {
+		t.Error("too few rows for the regressors should error")
+	}
+}
+
+func TestValidateExogMatrixEmptyShapes(t *testing.T) {
+	if _, err := validateExogMatrix(nil, 0); err == nil {
+		t.Error("zero rows should error")
+	}
+	if _, err := validateExogMatrix([][]float64{{}}, 1); err == nil {
+		t.Error("zero-width rows should error")
+	}
+}
+
+func TestFitWithExogTooShortErrors(t *testing.T) {
+	// More regressors than usable differenced rows: the OLS step must fail and Fit
+	// surface it.
+	y := []float64{1, 2, 3, 4, 5, 6}
+	X := make([][]float64, len(y))
+	for i := range X {
+		X[i] = []float64{float64(i), float64(i * i), float64(i * i * i), float64(i + 1), float64(2 * i)}
+	}
+	m, _ := NewARIMA(0, 1, 0)
+	if err := m.Fit(y, WithExog(X)); err == nil {
+		t.Error("exog regression with too few rows should error")
+	}
+}
+
+func TestForecastExogInvalidHorizon(t *testing.T) {
+	n := 40
+	X := make([][]float64, n)
+	y := make([]float64, n)
+	for i := range X {
+		X[i] = []float64{float64(i % 3)}
+		y[i] = float64(i%3) + math.Sin(float64(i))
+	}
+	m, _ := NewARIMA(1, 0, 0)
+	if err := m.Fit(y, WithExog(X)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.ForecastExog(0, nil); err == nil {
+		t.Error("non-positive horizon should error")
+	}
+	if _, err := m.ForecastIntervalExog(0, 0.95, nil); err == nil {
+		t.Error("non-positive horizon should error")
+	}
+}
+
+func TestExogCSSRefinement(t *testing.T) {
+	rng := rand.New(rand.NewSource(5))
+	n := 220
+	x := make([]float64, n)
+	y := make([]float64, n)
+	var eta float64
+	for i := 0; i < n; i++ {
+		x[i] = math.Sin(float64(i) / 3.0)
+		eta = 0.5*eta + rng.NormFloat64()*0.3
+		y[i] = 2.5*x[i] + eta
+	}
+	X := make([][]float64, n)
+	for i := range X {
+		X[i] = []float64{x[i]}
+	}
+	m, _ := NewARIMA(1, 0, 1)
+	if err := m.Fit(y, WithExog(X), WithCSSRefinement()); err != nil {
+		t.Fatal(err)
+	}
+	if b := m.Beta(); len(b) != 1 || math.Abs(b[0]-2.5) > 0.3 {
+		t.Fatalf("CSS exog beta=%v, want ~[2.5]", b)
+	}
+	f, err := m.ForecastExog(3, [][]float64{{0.1}, {0.2}, {0.3}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range f {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			t.Fatalf("non-finite CSS exog forecast %v", f)
+		}
+	}
+}
+
 func TestSeasonalFitWithExogIsFinite(t *testing.T) {
 	rng := rand.New(rand.NewSource(99))
 	m := 12
@@ -294,6 +380,61 @@ func TestAutoARIMAWithExogSelectsAndForecasts(t *testing.T) {
 		if math.IsNaN(v) || math.IsInf(v, 0) {
 			t.Fatalf("non-finite auto-exog forecast %v", f)
 		}
+	}
+}
+
+func TestAutoSARIMAWithExog(t *testing.T) {
+	rng := rand.New(rand.NewSource(13))
+	m := 12
+	n := 264
+	// The covariate must not be period-m, or seasonal differencing (1−Bᵐ)
+	// annihilates it; use a slow non-seasonal cycle (period ~107).
+	x := make([]float64, n)
+	y := make([]float64, n)
+	var eta float64
+	for i := 0; i < n; i++ {
+		x[i] = math.Sin(float64(i) / 17.0)
+		season := math.Sin(2 * math.Pi * float64(i) / float64(m))
+		eta = 0.4*eta + rng.NormFloat64()*0.3
+		y[i] = 3*x[i] + season + eta
+	}
+	X := make([][]float64, n)
+	for i := range X {
+		X[i] = []float64{x[i]}
+	}
+	model, err := AutoSARIMA(y, 2, 1, 2, 1, 1, m, WithExog(X))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(model.Beta()) != 1 {
+		t.Fatalf("expected one beta, got %v", model.Beta())
+	}
+	futureX := make([][]float64, m)
+	for i := range futureX {
+		futureX[i] = []float64{math.Sin(float64(n+i) / 17.0)}
+	}
+	f, err := model.ForecastExog(m, futureX)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range f {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			t.Fatalf("non-finite auto-seasonal-exog forecast %v", f)
+		}
+	}
+}
+
+func TestAutoExogInvalidMatrixErrors(t *testing.T) {
+	y := make([]float64, 40)
+	for i := range y {
+		y[i] = math.Sin(float64(i))
+	}
+	badX := [][]float64{{1}, {2}} // wrong row count
+	if _, err := AutoARIMA(y, 2, 1, 2, WithExog(badX)); err == nil {
+		t.Error("AutoARIMA with mismatched exog rows should error")
+	}
+	if _, err := AutoSARIMA(y, 2, 1, 2, 1, 1, 12, WithExog(badX)); err == nil {
+		t.Error("AutoSARIMA with mismatched exog rows should error")
 	}
 }
 
