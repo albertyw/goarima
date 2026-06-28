@@ -81,6 +81,39 @@ func TestPolyRootsConstant(t *testing.T) {
 	}
 }
 
+func TestPolyRootsTrimsTrailingZeros(t *testing.T) {
+	// 1 + 0.5z + 0·z² is really degree 1 (root at z = -2); trailing zero trimmed.
+	got := polyRoots([]float64{1, 0.5, 0})
+	if len(got) != 1 {
+		t.Fatalf("len = %d, want 1 (degree dropped)", len(got))
+	}
+	if math.Abs(real(got[0])-(-2)) > 1e-9 || math.Abs(imag(got[0])) > 1e-9 {
+		t.Errorf("root = %v, want -2", got[0])
+	}
+}
+
+func TestReflectUnstableRootsNoChange(t *testing.T) {
+	// A stable polynomial (1 − 0.5z, root at 2) is returned unchanged.
+	coef := []float64{1, -0.5}
+	got := reflectUnstableRoots(coef)
+	if len(got) != 2 || math.Abs(got[0]-1) > 1e-12 || math.Abs(got[1]-(-0.5)) > 1e-12 {
+		t.Errorf("stable poly changed: %v", got)
+	}
+	// Degree-0 (no roots) also returns a copy.
+	if got := reflectUnstableRoots([]float64{1}); len(got) != 1 || got[0] != 1 {
+		t.Errorf("constant poly changed: %v", got)
+	}
+}
+
+func TestRepairUnitRoot(t *testing.T) {
+	// AR(1) phi=1: characteristic root is exactly on the unit circle (z=1).
+	// Reflection maps it to itself, so the nudge must push it strictly outside.
+	got := repairStationary([]float64{1})
+	if !isStationary(got) {
+		t.Errorf("unit-root AR not stationary after repair: %v", got)
+	}
+}
+
 // unstableSeries is a deterministic series whose Hannan-Rissanen Stage-2 OLS
 // lands outside the valid region: (0,0,1) is non-invertible and (2,0,2) is
 // non-stationary, so it exercises both repair branches.
