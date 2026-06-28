@@ -22,7 +22,7 @@ func css(z, phi, theta []float64) float64 {
 // always fall back to the seed and only satisfy a non-strict assertion).
 func TestRefineCSSImprovesARMA(t *testing.T) {
 	z := genARMA11(3000, 0.5, 0.4, 3)
-	phiHR, thetaHR, _, err := hannanRissanen(z, 1, 1)
+	phiHR, thetaHR, _, err := hannanRissanen(z, 1, 1, false)
 	require.NoError(t, err)
 
 	phi, theta := refineCSS(z, phiHR, thetaHR)
@@ -36,7 +36,7 @@ func TestRefineCSSImprovesARMA(t *testing.T) {
 // stationary and invertible, so the forecast recursion cannot diverge.
 func TestRefineCSSStaysStable(t *testing.T) {
 	z := genARMA11(2000, 0.6, 0.5, 7)
-	phiHR, thetaHR, _, err := hannanRissanen(z, 1, 1)
+	phiHR, thetaHR, _, err := hannanRissanen(z, 1, 1, false)
 	require.NoError(t, err)
 
 	phi, theta := refineCSS(z, phiHR, thetaHR)
@@ -58,7 +58,7 @@ func TestRefineCSSNoParams(t *testing.T) {
 func TestRefineCSSNeverWorseThanSeed(t *testing.T) {
 	for seed := int64(1); seed <= 5; seed++ {
 		z := genARMA11(1000, 0.4, 0.3, seed)
-		phiHR, thetaHR, _, err := hannanRissanen(z, 1, 1)
+		phiHR, thetaHR, _, err := hannanRissanen(z, 1, 1, false)
 		require.NoError(t, err)
 
 		phi, theta := refineCSS(z, phiHR, thetaHR)

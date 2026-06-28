@@ -80,3 +80,76 @@ func TestPolyRootsConstant(t *testing.T) {
 		t.Errorf("polyRoots(nil) = %v, want nil", got)
 	}
 }
+
+// unstableSeries is a deterministic series whose Hannan-Rissanen Stage-2 OLS
+// lands outside the valid region: (0,0,1) is non-invertible and (2,0,2) is
+// non-stationary, so it exercises both repair branches.
+func unstableSeries() []float64 {
+	s := make([]float64, 120)
+	for i := range s {
+		s[i] = math.Sin(float64(i)*1.7) + 0.9*math.Sin(float64(i)*0.85)
+	}
+	return s
+}
+
+func TestFitRejectsUnstableByDefault(t *testing.T) {
+	s := unstableSeries()
+	m, err := NewARIMA(0, 0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Fit(s); err == nil {
+		t.Fatal("expected default Fit to reject the non-invertible MA fit")
+	}
+}
+
+func TestFitRepairsNonInvertibleMA(t *testing.T) {
+	s := unstableSeries()
+	m, err := NewARIMA(0, 0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Fit(s, WithRootRepair()); err != nil {
+		t.Fatalf("WithRootRepair Fit failed: %v", err)
+	}
+	if !isInvertible(m.Theta()) {
+		t.Errorf("theta not invertible after repair: %v", m.Theta())
+	}
+	fc, err := m.Forecast(5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range fc {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			t.Fatalf("non-finite forecast: %v", fc)
+		}
+	}
+}
+
+func TestFitRepairsNonStationaryAR(t *testing.T) {
+	s := unstableSeries()
+	m, err := NewARIMA(2, 0, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Fit(s, WithRootRepair()); err != nil {
+		t.Fatalf("WithRootRepair Fit failed: %v", err)
+	}
+	if !isStationary(m.Phi()) {
+		t.Errorf("phi not stationary after repair: %v", m.Phi())
+	}
+}
+
+func TestFitRepairsSeasonal(t *testing.T) {
+	s := unstableSeries()
+	m, err := NewSARIMA(0, 0, 1, 0, 0, 1, 12)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Fit(s, WithRootRepair()); err != nil {
+		t.Fatalf("seasonal WithRootRepair Fit failed: %v", err)
+	}
+	if !isInvertible(m.Theta()) || !isInvertible(m.SeasonalTheta()) {
+		t.Errorf("seasonal MA not invertible after repair: %v %v", m.Theta(), m.SeasonalTheta())
+	}
+}
