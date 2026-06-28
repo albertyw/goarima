@@ -13,7 +13,7 @@ import (
 // optimizer (which would always fall back to the seed).
 func TestRefineMLEImprovesARMA(t *testing.T) {
 	z := genARMA11(3000, 0.5, 0.4, 3)
-	phiHR, thetaHR, _, err := hannanRissanen(z, 1, 1)
+	phiHR, thetaHR, _, err := hannanRissanen(z, 1, 1, false)
 	require.NoError(t, err)
 
 	phi, theta := refineMLE(z, phiHR, thetaHR)
@@ -27,7 +27,7 @@ func TestRefineMLEImprovesARMA(t *testing.T) {
 // stationary and invertible, so neither the filter nor the forecast diverges.
 func TestRefineMLEStaysStable(t *testing.T) {
 	z := genARMA11(2000, 0.6, 0.5, 7)
-	phiHR, thetaHR, _, err := hannanRissanen(z, 1, 1)
+	phiHR, thetaHR, _, err := hannanRissanen(z, 1, 1, false)
 	require.NoError(t, err)
 
 	phi, theta := refineMLE(z, phiHR, thetaHR)
@@ -50,7 +50,7 @@ func TestRefineMLENoParams(t *testing.T) {
 func TestRefineMLENeverWorseThanSeed(t *testing.T) {
 	for seed := int64(1); seed <= 5; seed++ {
 		z := genARMA11(1000, 0.4, 0.3, seed)
-		phiHR, thetaHR, _, err := hannanRissanen(z, 1, 1)
+		phiHR, thetaHR, _, err := hannanRissanen(z, 1, 1, false)
 		require.NoError(t, err)
 
 		phi, theta := refineMLE(z, phiHR, thetaHR)

@@ -217,6 +217,13 @@ Hannan-Rissanen seed is used unchanged. Refinement therefore never produces a
 worse fit than the Hannan-Rissanen seed (Nelder-Mead finds a local optimum, not
 necessarily the global one). If both options are passed, MLE takes precedence.
 
+The unconstrained Hannan-Rissanen seed itself can land outside that region; by
+default `Fit` then errors. `WithRootRepair()` instead **reflects** each offending
+root to its reciprocal `1/conj(r)` — moving a root on or inside the unit circle to
+the outside while preserving its argument, so conjugate pairs stay paired and the
+rebuilt polynomial stays real (`roots.go`). This is the classic Box-Jenkins repair
+and gives the optimizer-free `Fit` a valid model to return.
+
 ---
 
 ## 5. Forecasting
@@ -435,9 +442,10 @@ leaves out things a production statistics package would include:
   refinement is least-squares. The optional `WithMLE` refinement adds the exact
   Gaussian (Kalman-filter) likelihood, but small numeric differences from
   statsmodels/pmdarima remain.
-- **Unstable fits are rejected, not repaired.** If an explicit `(p,d,q)` lands
-  outside the stationary/invertible region, `Fit` returns an error instead of
-  re-estimating into the valid region.
+- **Unstable fits are rejected by default, repaired on request.** If an explicit
+  `(p,d,q)` lands outside the stationary/invertible region, `Fit` returns an error
+  unless you pass `WithRootRepair()`, which reflects each offending root to its
+  reciprocal (moving it outside the unit circle) and rebuilds a valid polynomial.
 
 See the project README's *Limitations* section for the current list.
 

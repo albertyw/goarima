@@ -154,6 +154,7 @@ type fitConfig struct {
 	stepwise  bool        // AutoARIMA-only: use the stepwise search instead of the grid
 	parallel  bool        // AutoARIMA-only: fit candidate orders concurrently
 	exog      [][]float64 // exogenous regressor matrix (nil when no exog)
+	repair    bool        // reflect unstable HR estimates into the valid region instead of erroring
 }
 
 // FitOption configures optional Fit behavior. The zero set of options keeps the
@@ -210,6 +211,16 @@ func WithStepwise() FitOption {
 // This option only affects AutoARIMA; Fit ignores it.
 func WithParallel() FitOption {
 	return func(c *fitConfig) { c.parallel = true }
+}
+
+// WithRootRepair makes Fit project an unstable Hannan-Rissanen estimate back into
+// the stationary/invertible region — reflecting any AR/MA root on or inside the
+// unit circle to its reciprocal (see roots.go) — instead of returning an error.
+// It is off by default. It composes with WithMLE/WithCSSRefinement (repair yields
+// a valid seed that the optimizer then refines) and threads through
+// AutoARIMA/AutoSARIMA, where it makes otherwise-rejected orders eligible.
+func WithRootRepair() FitOption {
+	return func(c *fitConfig) { c.repair = true }
 }
 
 func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
@@ -277,7 +288,7 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
 	}
 
 	// 3. estimate the (multiplicative) SARMA factors on the centered series
-	phi, theta, sphi, stheta, residuals, err := seasonalHannanRissanen(z, m.p, m.q, m.bigP, m.bigQ, m.period)
+	phi, theta, sphi, stheta, residuals, err := seasonalHannanRissanen(z, m.p, m.q, m.bigP, m.bigQ, m.period, cfg.repair)
 	if err != nil {
 		return fmt.Errorf("ARMA estimation failed: %w", err)
 	}

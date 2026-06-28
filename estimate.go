@@ -18,7 +18,7 @@ import (
 // the in-sample one-step residuals (length len(z)). Pure-AR models (q == 0) are
 // estimated directly by Yule-Walker, and a constant series yields zero
 // coefficients.
-func hannanRissanen(z []float64, p, q int) ([]float64, []float64, []float64, error) {
+func hannanRissanen(z []float64, p, q int, repair bool) ([]float64, []float64, []float64, error) {
 	n := len(z)
 
 	// Degenerate (constant) series: nothing to estimate.
@@ -98,13 +98,19 @@ func hannanRissanen(z []float64, p, q int) ([]float64, []float64, []float64, err
 	copy(theta, beta[p:])
 
 	// Stage 2 is unconstrained OLS, so it can land outside the stationary /
-	// invertible region. Such coefficients make the forecast recursion diverge,
-	// so reject them rather than return a model that explodes.
+	// invertible region. Such coefficients make the forecast recursion diverge.
+	// With repair, reflect the roots back inside; otherwise reject.
 	if !isStationary(phi) {
-		return nil, nil, nil, errors.New("hannanRissanen: estimated AR part is non-stationary")
+		if !repair {
+			return nil, nil, nil, errors.New("hannanRissanen: estimated AR part is non-stationary")
+		}
+		phi = repairStationary(phi)
 	}
 	if !isInvertible(theta) {
-		return nil, nil, nil, errors.New("hannanRissanen: estimated MA part is non-invertible")
+		if !repair {
+			return nil, nil, nil, errors.New("hannanRissanen: estimated MA part is non-invertible")
+		}
+		theta = repairInvertible(theta)
 	}
 
 	return phi, theta, armaResiduals(z, phi, theta), nil

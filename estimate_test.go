@@ -50,7 +50,7 @@ func genARMA11(n int, phi, theta float64, seed int64) []float64 {
 
 func TestHannanRissanenPureAR(t *testing.T) {
 	z := genAR1(2000, 0.6, 1)
-	phi, theta, residuals, err := hannanRissanen(z, 1, 0)
+	phi, theta, residuals, err := hannanRissanen(z, 1, 0, false)
 	require.NoError(t, err)
 	assert.Empty(t, theta)
 	assert.Len(t, residuals, len(z))
@@ -59,7 +59,7 @@ func TestHannanRissanenPureAR(t *testing.T) {
 
 func TestHannanRissanenPureMA(t *testing.T) {
 	z := genMA1(2000, 0.5, 2)
-	phi, theta, _, err := hannanRissanen(z, 0, 1)
+	phi, theta, _, err := hannanRissanen(z, 0, 1, false)
 	require.NoError(t, err)
 	assert.Empty(t, phi)
 	assert.InDelta(t, 0.5, theta[0], 0.1)
@@ -67,7 +67,7 @@ func TestHannanRissanenPureMA(t *testing.T) {
 
 func TestHannanRissanenARMA(t *testing.T) {
 	z := genARMA11(3000, 0.5, 0.4, 3)
-	phi, theta, _, err := hannanRissanen(z, 1, 1)
+	phi, theta, _, err := hannanRissanen(z, 1, 1, false)
 	require.NoError(t, err)
 	assert.InDelta(t, 0.5, phi[0], 0.1)
 	assert.InDelta(t, 0.4, theta[0], 0.1)
@@ -75,7 +75,7 @@ func TestHannanRissanenARMA(t *testing.T) {
 
 func TestHannanRissanenConstant(t *testing.T) {
 	z := make([]float64, 50) // all zeros (a centered constant series)
-	phi, theta, residuals, err := hannanRissanen(z, 1, 1)
+	phi, theta, residuals, err := hannanRissanen(z, 1, 1, false)
 	require.NoError(t, err)
 	assert.Equal(t, []float64{0}, phi)
 	assert.Equal(t, []float64{0}, theta)
@@ -84,7 +84,7 @@ func TestHannanRissanenConstant(t *testing.T) {
 
 func TestHannanRissanenTooShort(t *testing.T) {
 	z := genAR1(10, 0.5, 4)
-	_, _, _, err := hannanRissanen(z, 2, 2)
+	_, _, _, err := hannanRissanen(z, 2, 2, false)
 	assert.Error(t, err)
 }
 

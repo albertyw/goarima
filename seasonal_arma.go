@@ -53,9 +53,9 @@ func expandSeasonalMA(theta, seasonalTheta []float64, m int) []float64 {
 // For P==Q==0 it delegates to hannanRissanen. It returns the in-sample one-step
 // residuals from the expanded model, and rejects non-stationary/non-invertible
 // factor estimates (as hannanRissanen does for the non-seasonal case).
-func seasonalHannanRissanen(z []float64, p, q, P, Q, m int) (phi, theta, sphi, stheta, resid []float64, err error) {
+func seasonalHannanRissanen(z []float64, p, q, P, Q, m int, repair bool) (phi, theta, sphi, stheta, resid []float64, err error) {
 	if P == 0 && Q == 0 {
-		phi, theta, resid, err = hannanRissanen(z, p, q)
+		phi, theta, resid, err = hannanRissanen(z, p, q, repair)
 		return phi, theta, []float64{}, []float64{}, resid, err
 	}
 	n := len(z)
@@ -128,10 +128,18 @@ func seasonalHannanRissanen(z []float64, p, q, P, Q, m int) (phi, theta, sphi, s
 	stheta = append([]float64{}, beta[p+P+q:p+P+q+Q]...)
 
 	if !isStationary(phi) || !isStationary(sphi) {
-		return nil, nil, nil, nil, nil, errors.New("seasonalHannanRissanen: estimated AR part is non-stationary")
+		if !repair {
+			return nil, nil, nil, nil, nil, errors.New("seasonalHannanRissanen: estimated AR part is non-stationary")
+		}
+		phi = repairStationary(phi)
+		sphi = repairStationary(sphi)
 	}
 	if !isInvertible(theta) || !isInvertible(stheta) {
-		return nil, nil, nil, nil, nil, errors.New("seasonalHannanRissanen: estimated MA part is non-invertible")
+		if !repair {
+			return nil, nil, nil, nil, nil, errors.New("seasonalHannanRissanen: estimated MA part is non-invertible")
+		}
+		theta = repairInvertible(theta)
+		stheta = repairInvertible(stheta)
 	}
 
 	resid = armaResiduals(z, expandSeasonalAR(phi, sphi, m), expandSeasonalMA(theta, stheta, m))
