@@ -155,6 +155,22 @@ err := model.Fit(series, goarima.WithMLE())
 model, err := goarima.AutoARIMA(series, 5, 2, 5, goarima.WithMLE())
 ```
 
+### Repairing unstable fixed-order fits
+
+By default `Fit` returns an error when the Hannan-Rissanen estimate for an
+explicit `(p,d,q)` lands outside the stationary/invertible region.
+`WithRootRepair()` instead reflects the offending roots back inside the unit
+circle (to their reciprocals) and returns a valid model. It composes with
+`WithMLE`/`WithCSSRefinement` (repair yields a valid seed the optimizer then
+refines) and threads through `AutoARIMA`/`AutoSARIMA`.
+
+```go
+model, _ := goarima.NewARIMA(0, 0, 1)
+// Without WithRootRepair this errors when the MA estimate is non-invertible.
+err := model.Fit(series, goarima.WithRootRepair())
+// model.Theta() is now invertible (roots reflected inside the unit circle).
+```
+
 ### Order-search options
 
 `AutoARIMA` takes three further options that tune *how* the orders are searched
@@ -292,9 +308,12 @@ This is a pure-Go implementation that aims for clarity over completeness:
   an exact Gaussian maximum-likelihood fit (Kalman filter), though small numeric
   differences from statsmodels remain. For seasonal AR/MA models, the fast default
   uses an approximate seasonal seed; `WithMLE` matches SARIMAX.
-- **Non-invertible/non-stationary fixed-order fits are rejected, not repaired.**
-  `Fit` returns an error rather than estimating into the valid region, so some
-  explicit `(p,d,q)` requests fail instead of producing a model.
+- **Unstable fixed-order fits are rejected by default; opt into repair.** Without
+  `WithRootRepair()`, an explicit `(p,d,q)` whose Hannan-Rissanen estimate falls
+  outside the stationary/invertible region returns an error. Pass
+  `WithRootRepair()` to instead reflect the offending roots back inside the unit
+  circle and return a valid model. (`WithMLE`/`WithCSSRefinement` already keep the
+  refined fit in-region, matching statsmodels' default `enforce_*`.)
 
 ## Development
 
