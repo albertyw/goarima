@@ -118,6 +118,131 @@ func FuzzFitForecast(f *testing.F) {
 	})
 }
 
+// fuzzMatrix reshapes fuzzed bytes into a rows×cols finite matrix, cycling the
+// decoded values (or filling zeros when there are none) so any rows/cols pair is
+// representable.
+func fuzzMatrix(data []byte, rows, cols int) [][]float64 {
+	flat := fuzzSeries(data)
+	X := make([][]float64, rows)
+	for i := range X {
+		X[i] = make([]float64, cols)
+		for j := range X[i] {
+			if len(flat) > 0 {
+				X[i][j] = flat[(i*cols+j)%len(flat)]
+			}
+		}
+	}
+	return X
+}
+
+// checkExogForecasts is checkForecasts for a model fit with exogenous regressors:
+// the exog forecasters must never panic and, when they succeed, return h finite,
+// correctly-sized values with lower ≤ upper.
+func checkExogForecasts(t *testing.T, m *ARIMA, h int, futureX [][]float64) {
+	t.Helper()
+	if pred, err := m.ForecastExog(h, futureX); err == nil {
+		if len(pred) != h {
+			t.Fatalf("ForecastExog returned %d values, want %d", len(pred), h)
+		}
+		for i, v := range pred {
+			if math.IsNaN(v) || math.IsInf(v, 0) {
+				t.Fatalf("ForecastExog produced non-finite value %v at %d", v, i)
+			}
+		}
+	}
+	if fc, err := m.ForecastIntervalExog(h, 0.95, futureX); err == nil {
+		if len(fc.Point) != h || len(fc.Lower) != h || len(fc.Upper) != h {
+			t.Fatalf("ForecastIntervalExog lengths %d/%d/%d, want %d", len(fc.Point), len(fc.Lower), len(fc.Upper), h)
+		}
+		for i := range fc.Point {
+			if math.IsNaN(fc.Lower[i]) || math.IsInf(fc.Lower[i], 0) ||
+				math.IsNaN(fc.Upper[i]) || math.IsInf(fc.Upper[i], 0) {
+				t.Fatalf("ForecastIntervalExog produced non-finite bound at %d", i)
+			}
+			if fc.Lower[i] > fc.Upper[i] {
+				t.Fatalf("ForecastIntervalExog lower %v > upper %v at %d", fc.Lower[i], fc.Upper[i], i)
+			}
+		}
+	}
+}
+
+// FuzzExog drives regression-with-ARIMA-errors: WithExog Fit plus ForecastExog/
+// ForecastIntervalExog with a fuzzed n×k design matrix and h×k future rows,
+// asserting the β estimation, differencing, and forecast plumbing never panic
+// and successful exog forecasts stay finite and correctly sized.
+func FuzzExog(f *testing.F) {
+	seed := make([]float64, 40)
+	for i := range seed {
+		seed[i] = math.Sin(float64(i) * 0.3)
+	}
+	yb := floatsToBytes(seed)
+	xb := floatsToBytes(seed) // any finite bytes; reshaped by fuzzMatrix
+	f.Add(1, 0, 0, 1, 5, yb, xb)
+	f.Add(0, 1, 1, 2, 4, yb, xb)
+
+	f.Fuzz(func(t *testing.T, p, d, q, k, h int, ydata, xdata []byte) {
+		p, d, q = boundOrder(p, 3), boundOrder(d, 2), boundOrder(q, 3)
+		k = boundOrder(k, 2) + 1  // 1..3
+		h = boundOrder(h, 23) + 1 // 1..24
+		series := fuzzSeries(ydata)
+		if len(series) == 0 {
+			return // WithExog requires at least one row
+		}
+		X := fuzzMatrix(xdata, len(series), k)
+		futureX := fuzzMatrix(xdata, h, k)
+
+		model, err := NewARIMA(p, d, q)
+		if err != nil {
+			return
+		}
+		if err := model.Fit(series, WithExog(X)); err != nil {
+			return
+		}
+		checkExogForecasts(t, model, h, futureX)
+	})
+}
+
+// FuzzFitRefine drives the optimizer and root-repair refinement paths
+// (WithCSSRefinement/WithMLE/WithRootRepair) on a fuzzed series, asserting the
+// gonum Nelder-Mead search and root reflection never panic and still yield
+// finite, correctly-sized forecasts.
+func FuzzFitRefine(f *testing.F) {
+	seed := make([]float64, 50)
+	for i := range seed {
+		seed[i] = math.Sin(float64(i)*0.5) + 0.3*float64(i%5)
+	}
+	sb := floatsToBytes(seed)
+	f.Add(1, 0, 1, 0, 6, sb)
+	f.Add(2, 1, 2, 1, 5, sb)
+	f.Add(1, 0, 1, 2, 4, sb)
+
+	f.Fuzz(func(t *testing.T, p, d, q, opt, h int, data []byte) {
+		p, d, q = boundOrder(p, 3), boundOrder(d, 2), boundOrder(q, 3)
+		h = boundOrder(h, 23) + 1 // 1..24
+		series := fuzzSeries(data)
+
+		model, err := NewARIMA(p, d, q)
+		if err != nil {
+			return
+		}
+		var opts []FitOption
+		switch boundOrder(opt, 3) {
+		case 0:
+			opts = []FitOption{WithCSSRefinement()}
+		case 1:
+			opts = []FitOption{WithMLE()}
+		case 2:
+			opts = []FitOption{WithRootRepair()}
+		case 3:
+			opts = []FitOption{WithMLE(), WithRootRepair()}
+		}
+		if err := model.Fit(series, opts...); err != nil {
+			return
+		}
+		checkForecasts(t, model, h)
+	})
+}
+
 // FuzzAutoARIMA drives the order search with fuzzed caps and horizon against a
 // fuzzed series, asserting selection + forecasting never panic and produce
 // finite, correctly-sized output.
