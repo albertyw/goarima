@@ -1,6 +1,7 @@
 package goarima
 
 import (
+	"context"
 	"errors"
 	"fmt"
 )
@@ -38,6 +39,13 @@ func AutoARIMA(series []float64, maxP, maxD, maxQ int, opts ...FitOption) (*ARIM
 	for _, opt := range opts {
 		opt(&cfg)
 	}
+	ctx := cfg.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("AutoARIMA: %w", ctx.Err())
+	}
 
 	dSeries := series
 	if cfg.exog != nil {
@@ -60,6 +68,7 @@ func AutoARIMA(series []float64, maxP, maxD, maxQ int, opts ...FitOption) (*ARIM
 		maxQ:   maxQ,
 		crit:   cfg.criterion,
 		opts:   opts,
+		ctx:    ctx,
 	}
 
 	var sel order
@@ -69,6 +78,9 @@ func AutoARIMA(series []float64, maxP, maxD, maxQ int, opts ...FitOption) (*ARIM
 		sel = space.gridSearch(cfg.parallel)
 	}
 
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("AutoARIMA: %w", ctx.Err())
+	}
 	if sel[0] < 0 {
 		return nil, errors.New("AutoARIMA: no candidate model could be fit")
 	}
@@ -112,6 +124,13 @@ func AutoSARIMA(series []float64, maxP, maxD, maxQ, maxBigP, maxBigQ, m int, opt
 	for _, opt := range opts {
 		opt(&cfg)
 	}
+	ctx := cfg.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("AutoSARIMA: %w", ctx.Err())
+	}
 
 	dSeries := series
 	if cfg.exog != nil {
@@ -139,6 +158,7 @@ func AutoSARIMA(series []float64, maxP, maxD, maxQ, maxBigP, maxBigQ, m int, opt
 		period:  m,
 		crit:    cfg.criterion,
 		opts:    opts,
+		ctx:     ctx,
 	}
 
 	var sel order
@@ -146,6 +166,9 @@ func AutoSARIMA(series []float64, maxP, maxD, maxQ, maxBigP, maxBigQ, m int, opt
 		sel = space.stepwiseSearch(cfg.parallel)
 	} else {
 		sel = space.gridSearch(cfg.parallel)
+	}
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("AutoSARIMA: %w", ctx.Err())
 	}
 	if sel[0] < 0 {
 		return nil, errors.New("AutoSARIMA: no candidate model could be fit")

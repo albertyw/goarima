@@ -186,6 +186,10 @@ err := model.Fit(series, goarima.WithRootRepair())
   only changes speed — and it pays off only when each fit is expensive (e.g. with
   `WithMLE`); for the fast default Hannan-Rissanen fits the goroutine overhead
   outweighs the benefit.
+- `WithContext(ctx)` — cancel a long order search. When `ctx` is cancelled (or its
+  deadline passes) `AutoARIMA`/`AutoSARIMA` stop between candidate fits and return
+  an error wrapping the context cause. It only affects the auto-search; a plain
+  `Fit` ignores it.
 
 ```go
 model, err := goarima.AutoARIMA(series, 5, 2, 5,

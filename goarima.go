@@ -1,6 +1,7 @@
 package goarima
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -155,6 +156,9 @@ type fitConfig struct {
 	parallel  bool        // AutoARIMA-only: fit candidate orders concurrently
 	exog      [][]float64 // exogenous regressor matrix (nil when no exog)
 	repair    bool        // reflect unstable HR estimates into the valid region instead of erroring
+	// ctx carries AutoARIMA-only search cancellation; stored on the config (rather
+	// than a parameter) to keep the option-based AutoARIMA/AutoSARIMA API stable.
+	ctx context.Context
 }
 
 // FitOption configures optional Fit behavior. The zero set of options keeps the
@@ -221,6 +225,15 @@ func WithParallel() FitOption {
 // AutoARIMA/AutoSARIMA, where it makes otherwise-rejected orders eligible.
 func WithRootRepair() FitOption {
 	return func(c *fitConfig) { c.repair = true }
+}
+
+// WithContext supplies a context whose cancellation aborts an AutoARIMA/AutoSARIMA
+// order search; the call then returns an error wrapping the context cause. Like
+// the other search options it only affects AutoARIMA/AutoSARIMA — a plain Fit
+// ignores it. Cancellation is observed between candidate fits (a single in-flight
+// fit is not interrupted). A nil context is treated as context.Background().
+func WithContext(ctx context.Context) FitOption {
+	return func(c *fitConfig) { c.ctx = ctx }
 }
 
 func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {

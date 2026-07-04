@@ -331,7 +331,9 @@ best strictly-better one, and repeat until none improves. It fits far fewer mode
 can settle on a local rather than the global optimum. `WithParallel()` fits the
 candidates of each step concurrently; the result is identical to the serial
 search, so it only changes wall-clock time (and only helps when each fit is
-expensive, e.g. under `WithMLE`).
+expensive, e.g. under `WithMLE`). A long search can be cancelled by passing
+`WithContext(ctx)`: the search stops between candidate fits when the context is
+cancelled and returns an error wrapping the cause.
 
 ---
 
