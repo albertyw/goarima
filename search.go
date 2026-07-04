@@ -1,6 +1,7 @@
 package goarima
 
 import (
+	"context"
 	"math"
 	"runtime"
 	"sync"
@@ -18,6 +19,7 @@ type searchSpace struct {
 	bigD, period     int // seasonal differencing order and period; period < 2 => non-seasonal
 	crit             Criterion
 	opts             []FitOption
+	ctx              context.Context // search cancellation; never nil (set by AutoARIMA)
 }
 
 // order is one candidate's (p, q, P, Q).
@@ -71,6 +73,9 @@ func (s searchSpace) evalBatch(points []order, parallel bool) []candidate {
 	out := make([]candidate, len(points))
 	if !parallel || len(points) <= 1 {
 		for i, pt := range points {
+			if s.ctx.Err() != nil {
+				break // cancelled: leave the rest as {ok:false}
+			}
 			out[i] = s.evalCandidate(pt)
 		}
 		return out
@@ -86,6 +91,9 @@ func (s searchSpace) evalBatch(points []order, parallel bool) []candidate {
 		go func() {
 			defer wg.Done()
 			for i := range idx {
+				if s.ctx.Err() != nil {
+					continue // cancelled: drain idx, skip the fit (out[i] stays {ok:false})
+				}
 				out[i] = s.evalCandidate(points[i])
 			}
 		}()
