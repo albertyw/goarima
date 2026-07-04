@@ -32,13 +32,10 @@ func TestStepwiseFindsGridOptimumOnCleanAR1(t *testing.T) {
 	series := ar1Series(300, 0.7, 11)
 	grid, err := AutoARIMA(series, 4, 2, 4)
 	require.NoError(t, err)
-	gp, gd, gq := grid.Orders()
-
 	step, err := AutoARIMA(series, 4, 2, 4, WithStepwise())
 	require.NoError(t, err)
-	sp, sd, sq := step.Orders()
 
-	assert.Equal(t, [3]int{gp, gd, gq}, [3]int{sp, sd, sq})
+	assert.Equal(t, grid.Order(), step.Order())
 }
 
 func TestStepwiseProducesValidFit(t *testing.T) {
@@ -47,10 +44,10 @@ func TestStepwiseProducesValidFit(t *testing.T) {
 	series := rampWithNoise(200, 0.5, 3)
 	model, err := AutoARIMA(series, 5, 2, 5, WithStepwise())
 	require.NoError(t, err)
-	p, _, q := model.Orders()
-	assert.LessOrEqual(t, p, 5)
-	assert.LessOrEqual(t, q, 5)
-	assert.False(t, p == 0 && q == 0, "(0,0) is never selected")
+	o := model.Order()
+	assert.LessOrEqual(t, o.P, 5)
+	assert.LessOrEqual(t, o.Q, 5)
+	assert.False(t, o.P == 0 && o.Q == 0, "(0,0) is never selected")
 	fc, err := model.Forecast(6)
 	require.NoError(t, err)
 	for _, f := range fc {

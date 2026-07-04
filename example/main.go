@@ -51,7 +51,8 @@ func parseSeries(csv string) ([]float64, error) {
 // report prints a model's orders, coefficients, and forecast in a layout that
 // mirrors the statsmodels reference script for easy side-by-side comparison.
 func report(label, name string, model *goarima.ARIMA, horizon int) {
-	p, d, q := model.Orders()
+	o := model.Order()
+	p, d, q := o.P, o.D, o.Q
 	forecast, err := model.Forecast(horizon)
 	if err != nil {
 		fmt.Printf("[%s] %s: %v\n", label, name, err)
@@ -75,8 +76,8 @@ func runAuto(name string, series []float64, horizon int) {
 		fmt.Printf("[goarima] %s: %v\n", name, err)
 		return
 	}
-	p, d, q := model.Orders()
-	if refined, rerr := goarima.NewARIMA(p, d, q); rerr == nil {
+	o := model.Order()
+	if refined, rerr := goarima.NewARIMA(o); rerr == nil {
 		if ferr := refined.Fit(series, goarima.WithMLE()); ferr == nil {
 			model = refined // keep the HR fit if MLE refinement fails
 		}
@@ -93,8 +94,10 @@ func runAutoSeasonal(name string, series []float64, period, horizon int) {
 		fmt.Printf("[goarima-seasonal] %s: %v\n", name, err)
 		return
 	}
-	p, d, q := model.Orders()
-	bigP, bigD, bigQ, m := model.SeasonalOrders()
+	o := model.Order()
+	p, d, q := o.P, o.D, o.Q
+	so := model.SeasonalOrder()
+	bigP, bigD, bigQ, m := so.P, so.D, so.Q, so.Period
 	forecast, err := model.Forecast(horizon)
 	if err != nil {
 		fmt.Printf("[goarima-seasonal] %s: %v\n", name, err)
@@ -112,8 +115,9 @@ func fitAutoMLE(series []float64) (*goarima.ARIMA, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	p, d, q := model.Orders()
-	if refined, rerr := goarima.NewARIMA(p, d, q); rerr == nil {
+	o := model.Order()
+	p, d, q := o.P, o.D, o.Q
+	if refined, rerr := goarima.NewARIMA(o); rerr == nil {
 		if refined.Fit(series, goarima.WithMLE()) == nil {
 			model = refined // keep the HR fit if MLE refinement fails
 		}
@@ -127,9 +131,11 @@ func fitAutoSeasonalMLE(series []float64, period int) (*goarima.ARIMA, string, e
 	if err != nil {
 		return nil, "", err
 	}
-	p, d, q := model.Orders()
-	bigP, bigD, bigQ, m := model.SeasonalOrders()
-	if refined, rerr := goarima.NewSARIMA(p, d, q, bigP, bigD, bigQ, m); rerr == nil {
+	o := model.Order()
+	p, d, q := o.P, o.D, o.Q
+	so := model.SeasonalOrder()
+	bigP, bigD, bigQ, m := so.P, so.D, so.Q, so.Period
+	if refined, rerr := goarima.NewSARIMA(o, so); rerr == nil {
 		if refined.Fit(series, goarima.WithMLE()) == nil {
 			model = refined
 		}
@@ -186,7 +192,7 @@ func exogExample(n, h int) (y []float64, X, futureX [][]float64) {
 // ForecastExog at the supplied future covariate. The distinct prefix keeps it out
 // of compare.py (which matches [goarima]); plot_exog.py parses it.
 func printExog(name string, p, d, q, horizon int, y []float64, X, futureX [][]float64) {
-	model, err := goarima.NewARIMA(p, d, q)
+	model, err := goarima.NewARIMA(goarima.Order{P: p, D: d, Q: q})
 	if err != nil {
 		fmt.Printf("[goarima-exog] %s: %v\n", name, err)
 		return

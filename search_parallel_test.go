@@ -17,9 +17,7 @@ func TestWithParallelSetsConfig(t *testing.T) {
 // sameModel asserts two fitted models selected the same order and coefficients.
 func sameModel(t *testing.T, want, got *ARIMA) {
 	t.Helper()
-	wp, wd, wq := want.Orders()
-	gp, gd, gq := got.Orders()
-	assert.Equal(t, [3]int{wp, wd, wq}, [3]int{gp, gd, gq}, "orders differ")
+	assert.Equal(t, want.Order(), got.Order(), "orders differ")
 	assert.Equal(t, want.Phi(), got.Phi(), "phi differs")
 	assert.Equal(t, want.Theta(), got.Theta(), "theta differs")
 }

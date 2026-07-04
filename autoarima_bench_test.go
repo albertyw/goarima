@@ -92,7 +92,7 @@ func BenchmarkAutoSARIMAStepwise(b *testing.B) {
 
 func BenchmarkForecastInterval(b *testing.B) {
 	s := benchSeries(b)
-	m, err := NewARIMA(2, 1, 2)
+	m, err := NewARIMA(Order{P: 2, D: 1, Q: 2})
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func BenchmarkForecastInterval(b *testing.B) {
 
 func BenchmarkSeasonalForecastInterval(b *testing.B) {
 	s := benchSeasonalSeries(b)
-	m, err := NewSARIMA(0, 1, 1, 0, 1, 1, 12)
+	m, err := NewSARIMA(Order{P: 0, D: 1, Q: 1}, SeasonalOrder{P: 0, D: 1, Q: 1, Period: 12})
 	if err != nil {
 		b.Fatal(err)
 	}

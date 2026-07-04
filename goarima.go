@@ -31,19 +31,40 @@ type ARIMA struct {
 	fitted           bool        // whether Fit has populated the coefficients/state
 }
 
-// NewARIMA constructs a non-seasonal ARIMA(p,d,q) model. It is shorthand for
-// NewSARIMA(p, d, q, 0, 0, 0, 0).
-func NewARIMA(p, d, q int) (*ARIMA, error) {
-	return NewSARIMA(p, d, q, 0, 0, 0, 0)
+// Order holds the non-seasonal ARIMA orders (p, d, q): the AR order, the
+// differencing order, and the MA order. The fields carry the conventional
+// lowercase ARIMA letters p/d/q (capitalized because Go exports capitalized
+// fields); the seasonal counterparts live in SeasonalOrder.
+type Order struct {
+	P int // AR order p
+	D int // differencing order d
+	Q int // MA order q
+}
+
+// SeasonalOrder holds the multiplicative seasonal orders (P, D, Q) and the
+// seasonal period m. Period must be >= 2 whenever any of P, D, or Q is positive.
+type SeasonalOrder struct {
+	P      int // seasonal AR order
+	D      int // seasonal differencing order
+	Q      int // seasonal MA order
+	Period int // seasonal period m
+}
+
+// NewARIMA constructs a non-seasonal ARIMA model. It is shorthand for
+// NewSARIMA(order, SeasonalOrder{}).
+func NewARIMA(order Order) (*ARIMA, error) {
+	return NewSARIMA(order, SeasonalOrder{})
 }
 
 // NewSARIMA constructs a seasonal ARIMA model of the multiplicative class
 //
 //	φ(B)·Φₛ(Bᵐ)·(1−B)ᵈ(1−Bᵐ)ᴰ y_t = θ(B)·Θₛ(Bᵐ)·ε_t,
 //
-// with non-seasonal orders (p, d, q), seasonal orders (P, D, Q), and seasonal
-// period m. m must be >= 2 whenever any seasonal order (P, D, or Q) is positive.
-func NewSARIMA(p, d, q, P, D, Q, m int) (*ARIMA, error) {
+// with non-seasonal orders order and seasonal orders seasonal. The seasonal
+// period must be >= 2 whenever any seasonal order (P, D, or Q) is positive.
+func NewSARIMA(order Order, seasonal SeasonalOrder) (*ARIMA, error) {
+	p, d, q := order.P, order.D, order.Q
+	P, D, Q, m := seasonal.P, seasonal.D, seasonal.Q, seasonal.Period
 	if p < 0 || d < 0 || q < 0 || P < 0 || D < 0 || Q < 0 {
 		return nil, errors.New("ARIMA orders must be non-negative")
 	}
@@ -75,14 +96,14 @@ func NewSARIMA(p, d, q, P, D, Q, m int) (*ARIMA, error) {
 	}, nil
 }
 
-// Orders returns the ARIMA orders (p, d, q).
-func (m *ARIMA) Orders() (int, int, int) {
-	return m.p, m.d, m.q
+// Order returns the non-seasonal ARIMA orders (p, d, q).
+func (m *ARIMA) Order() Order {
+	return Order{P: m.p, D: m.d, Q: m.q}
 }
 
-// SeasonalOrders returns the seasonal orders (P, D, Q, m).
-func (m *ARIMA) SeasonalOrders() (int, int, int, int) {
-	return m.bigP, m.bigD, m.bigQ, m.period
+// SeasonalOrder returns the seasonal orders (P, D, Q) and period m.
+func (m *ARIMA) SeasonalOrder() SeasonalOrder {
+	return SeasonalOrder{P: m.bigP, D: m.bigD, Q: m.bigQ, Period: m.period}
 }
 
 // Phi returns a copy of the regular AR coefficients (the φ factor, length p).

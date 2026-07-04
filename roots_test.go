@@ -127,7 +127,7 @@ func unstableSeries() []float64 {
 
 func TestFitRejectsUnstableByDefault(t *testing.T) {
 	s := unstableSeries()
-	m, err := NewARIMA(0, 0, 1)
+	m, err := NewARIMA(Order{P: 0, D: 0, Q: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestFitRejectsUnstableByDefault(t *testing.T) {
 
 func TestFitRepairsNonInvertibleMA(t *testing.T) {
 	s := unstableSeries()
-	m, err := NewARIMA(0, 0, 1)
+	m, err := NewARIMA(Order{P: 0, D: 0, Q: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestFitRepairsNonInvertibleMA(t *testing.T) {
 
 func TestFitRepairsNonStationaryAR(t *testing.T) {
 	s := unstableSeries()
-	m, err := NewARIMA(2, 0, 2)
+	m, err := NewARIMA(Order{P: 2, D: 0, Q: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestFitRepairsNonStationaryAR(t *testing.T) {
 
 func TestFitRepairsSeasonal(t *testing.T) {
 	s := unstableSeries()
-	m, err := NewSARIMA(0, 0, 1, 0, 0, 1, 12)
+	m, err := NewSARIMA(Order{P: 0, D: 0, Q: 1}, SeasonalOrder{P: 0, D: 0, Q: 1, Period: 12})
 	if err != nil {
 		t.Fatal(err)
 	}

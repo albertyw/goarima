@@ -55,10 +55,10 @@ func TestAutoARIMAWhiteNoise(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, model)
 
-	p, d, q := model.Orders()
-	assert.Equal(t, 0, d) // white noise should not be differenced
-	assert.LessOrEqual(t, p, 3)
-	assert.LessOrEqual(t, q, 3)
+	o := model.Order()
+	assert.Equal(t, 0, o.D) // white noise should not be differenced
+	assert.LessOrEqual(t, o.P, 3)
+	assert.LessOrEqual(t, o.Q, 3)
 
 	forecast, err := model.Forecast(5)
 	require.NoError(t, err)
@@ -72,8 +72,7 @@ func TestAutoARIMATrendChoosesDifferencing(t *testing.T) {
 	series := rampWithNoise(400, 0.7, 6)
 	model, err := AutoARIMA(series, 3, 2, 3)
 	require.NoError(t, err)
-	_, d, _ := model.Orders()
-	assert.GreaterOrEqual(t, d, 1)
+	assert.GreaterOrEqual(t, model.Order().D, 1)
 
 	// A trend forecast should keep climbing, not flatten out.
 	forecast, err := model.Forecast(3)
@@ -85,11 +84,11 @@ func TestAutoARIMARespectsBounds(t *testing.T) {
 	series := genARMA11(400, 0.5, 0.3, 7)
 	model, err := AutoARIMA(series, 2, 1, 2)
 	require.NoError(t, err)
-	p, d, q := model.Orders()
-	assert.LessOrEqual(t, p, 2)
-	assert.LessOrEqual(t, d, 1)
-	assert.LessOrEqual(t, q, 2)
-	assert.True(t, p > 0 || q > 0) // (0,0) is never selected
+	o := model.Order()
+	assert.LessOrEqual(t, o.P, 2)
+	assert.LessOrEqual(t, o.D, 1)
+	assert.LessOrEqual(t, o.Q, 2)
+	assert.True(t, o.P > 0 || o.Q > 0) // (0,0) is never selected
 }
 
 func TestAutoARIMAErrors(t *testing.T) {

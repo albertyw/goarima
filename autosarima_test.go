@@ -43,9 +43,9 @@ func TestAutoSARIMASelectsSeasonalDifferencingOnAirPassengers(t *testing.T) {
 	model, err := AutoSARIMA(series, 3, 1, 3, 0, 0, 12)
 	require.NoError(t, err)
 
-	_, D, _, period := model.SeasonalOrders()
-	assert.Equal(t, 1, D, "AirPassengers is strongly seasonal -> D=1")
-	assert.Equal(t, 12, period)
+	so := model.SeasonalOrder()
+	assert.Equal(t, 1, so.D, "AirPassengers is strongly seasonal -> D=1")
+	assert.Equal(t, 12, so.Period)
 
 	fc, err := model.Forecast(12)
 	require.NoError(t, err)
@@ -67,9 +67,7 @@ func TestAutoSARIMAThreadsParallelDeterministically(t *testing.T) {
 	require.NoError(t, err)
 	par, err := AutoSARIMA(series, 3, 1, 3, 0, 0, 12, WithParallel())
 	require.NoError(t, err)
-	sp, sd, sq := serial.Orders()
-	pp, pd, pq := par.Orders()
-	assert.Equal(t, [3]int{sp, sd, sq}, [3]int{pp, pd, pq})
+	assert.Equal(t, serial.Order(), par.Order())
 	assert.Equal(t, serial.Phi(), par.Phi())
 }
 
@@ -122,9 +120,9 @@ func TestAutoSARIMASelectsSeasonalAR(t *testing.T) {
 	}
 	model, err := AutoSARIMA(x, 2, 0, 2, 1, 1, m) // maxP,maxD,maxQ,maxBigP,maxBigQ,m
 	require.NoError(t, err)
-	P, D, _, _ := model.SeasonalOrders()
-	assert.Equal(t, 0, D, "stochastic seasonality -> no seasonal differencing")
-	assert.Equal(t, 1, P, "seasonal AR term selected")
+	so := model.SeasonalOrder()
+	assert.Equal(t, 0, so.D, "stochastic seasonality -> no seasonal differencing")
+	assert.Equal(t, 1, so.P, "seasonal AR term selected")
 }
 
 func TestAutoSARIMANoSeasonalDifferencingOnNoise(t *testing.T) {
@@ -132,6 +130,5 @@ func TestAutoSARIMANoSeasonalDifferencingOnNoise(t *testing.T) {
 	series := strongSeasonal(12, 12, 0, 1, 99) // amp 0 -> pure noise
 	model, err := AutoSARIMA(series, 3, 1, 3, 0, 0, 12)
 	require.NoError(t, err)
-	_, D, _, _ := model.SeasonalOrders()
-	assert.Equal(t, 0, D)
+	assert.Equal(t, 0, model.SeasonalOrder().D)
 }

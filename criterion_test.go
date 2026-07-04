@@ -87,10 +87,10 @@ func TestBICSelectsSimplerOrderThanAIC(t *testing.T) {
 	bicModel, err := AutoARIMA(series, 4, 2, 4, WithCriterion(BIC))
 	require.NoError(t, err)
 
-	ap, ad, aq := aicModel.Orders()
-	bp, bd, bq := bicModel.Orders()
-	assert.Equal(t, ad, bd, "differencing order should match; this test compares p+q only")
-	assert.Less(t, bp+bq, ap+aq, "BIC should select fewer AR+MA terms than AIC")
+	a := aicModel.Order()
+	b := bicModel.Order()
+	assert.Equal(t, a.D, b.D, "differencing order should match; this test compares p+q only")
+	assert.Less(t, b.P+b.Q, a.P+a.Q, "BIC should select fewer AR+MA terms than AIC")
 }
 
 func TestAutoARIMAHonorsCriterion(t *testing.T) {

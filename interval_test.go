@@ -61,7 +61,7 @@ func TestPsiWeightsSeasonalDiffIsOnesPerSeason(t *testing.T) {
 
 func fitAR1(t *testing.T) *ARIMA {
 	t.Helper()
-	m, err := NewARIMA(1, 0, 0)
+	m, err := NewARIMA(Order{P: 1, D: 0, Q: 0})
 	assert.NoError(t, err)
 	assert.NoError(t, m.Fit(ar1Series(80, 0.5, 7)))
 	return m
@@ -112,7 +112,7 @@ func TestForecastIntervalWidensWithHorizon(t *testing.T) {
 }
 
 func TestForecastIntervalErrorsOnUnfittedModel(t *testing.T) {
-	m, err := NewARIMA(1, 0, 0)
+	m, err := NewARIMA(Order{P: 1, D: 0, Q: 0})
 	assert.NoError(t, err)
 	_, err = m.ForecastInterval(5, 0.95)
 	assert.Error(t, err)

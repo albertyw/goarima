@@ -82,10 +82,8 @@ func TestAutoARIMALiveContextSameResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bp, bd, bq := base.Orders()
-	wp, wd, wq := withCtx.Orders()
-	if bp != wp || bd != wd || bq != wq {
-		t.Errorf("live ctx changed orders: (%d,%d,%d) vs (%d,%d,%d)", bp, bd, bq, wp, wd, wq)
+	if base.Order() != withCtx.Order() {
+		t.Errorf("live ctx changed orders: %v vs %v", base.Order(), withCtx.Order())
 	}
 }
 
@@ -93,7 +91,7 @@ func TestFitIgnoresContext(t *testing.T) {
 	s := rampWithNoise(100, 0.05, 7)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	m, err := NewARIMA(1, 1, 0)
+	m, err := NewARIMA(Order{P: 1, D: 1, Q: 0})
 	if err != nil {
 		t.Fatal(err)
 	}

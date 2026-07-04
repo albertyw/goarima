@@ -85,7 +85,7 @@ func AutoARIMA(series []float64, maxP, maxD, maxQ int, opts ...FitOption) (*ARIM
 		return nil, errors.New("AutoARIMA: no candidate model could be fit")
 	}
 
-	best, err := NewARIMA(sel[0], d, sel[1])
+	best, err := NewARIMA(Order{P: sel[0], D: d, Q: sel[1]})
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +174,7 @@ func AutoSARIMA(series []float64, maxP, maxD, maxQ, maxBigP, maxBigQ, m int, opt
 		return nil, errors.New("AutoSARIMA: no candidate model could be fit")
 	}
 
-	best, err := NewSARIMA(sel[0], d, sel[1], sel[2], bigD, sel[3], m)
+	best, err := NewSARIMA(Order{P: sel[0], D: d, Q: sel[1]}, SeasonalOrder{P: sel[2], D: bigD, Q: sel[3], Period: m})
 	if err != nil {
 		return nil, err
 	}

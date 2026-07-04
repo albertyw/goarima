@@ -104,9 +104,9 @@ func FuzzFitForecast(f *testing.F) {
 			err   error
 		)
 		if m >= 2 && (bigP > 0 || bigD > 0 || bigQ > 0) {
-			model, err = NewSARIMA(p, d, q, bigP, bigD, bigQ, m)
+			model, err = NewSARIMA(Order{P: p, D: d, Q: q}, SeasonalOrder{P: bigP, D: bigD, Q: bigQ, Period: m})
 		} else {
-			model, err = NewARIMA(p, d, q)
+			model, err = NewARIMA(Order{P: p, D: d, Q: q})
 		}
 		if err != nil {
 			return
@@ -191,7 +191,7 @@ func FuzzExog(f *testing.F) {
 		X := fuzzMatrix(xdata, len(series), k)
 		futureX := fuzzMatrix(xdata, h, k)
 
-		model, err := NewARIMA(p, d, q)
+		model, err := NewARIMA(Order{P: p, D: d, Q: q})
 		if err != nil {
 			return
 		}
@@ -221,7 +221,7 @@ func FuzzFitRefine(f *testing.F) {
 		h = boundOrder(h, 23) + 1 // 1..24
 		series := fuzzSeries(data)
 
-		model, err := NewARIMA(p, d, q)
+		model, err := NewARIMA(Order{P: p, D: d, Q: q})
 		if err != nil {
 			return
 		}
