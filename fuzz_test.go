@@ -267,3 +267,66 @@ func FuzzAutoARIMA(f *testing.F) {
 		checkForecasts(t, model, h)
 	})
 }
+
+// FuzzAutoSARIMA drives the seasonal order search with fuzzed caps, period, and
+// horizon. It exercises the seasonal-D selection (seasonalStrength /
+// centeredMovingAverage, whose moving-average window is the period) and the 4-D
+// (p,q,P,Q) search — including degenerate periods (0/1) — asserting selection and
+// forecasting never panic and stay finite and correctly sized.
+func FuzzAutoSARIMA(f *testing.F) {
+	seed := make([]float64, 96)
+	for i := range seed {
+		seed[i] = math.Sin(float64(i)*0.5) + float64(i)*0.05
+	}
+	sb := floatsToBytes(seed)
+	f.Add(2, 1, 2, 1, 1, 12, 6, sb)
+	f.Add(1, 1, 1, 1, 0, 4, 4, sb)
+
+	f.Fuzz(func(t *testing.T, maxP, maxD, maxQ, maxBigP, maxBigQ, m, h int, data []byte) {
+		maxP, maxD, maxQ = boundOrder(maxP, 2), boundOrder(maxD, 2), boundOrder(maxQ, 2)
+		maxBigP, maxBigQ = boundOrder(maxBigP, 1), boundOrder(maxBigQ, 1)
+		m = boundOrder(m, 12)     // period 0..12, including the degenerate 0/1
+		h = boundOrder(h, 23) + 1 // 1..24
+		series := fuzzSeries(data)
+
+		model, err := AutoSARIMA(series, maxP, maxD, maxQ, maxBigP, maxBigQ, m)
+		if err != nil {
+			return
+		}
+		checkForecasts(t, model, h)
+	})
+}
+
+// FuzzAutoExog drives the auto+exog interaction: AutoARIMA(..., WithExog(X)),
+// which nets X out with a provisional β before selecting d and re-estimates β per
+// candidate fit. A fuzzed n×k matrix and h×k future rows stress that plumbing,
+// asserting selection and the exog forecasters never panic and stay finite and
+// correctly sized.
+func FuzzAutoExog(f *testing.F) {
+	seed := make([]float64, 48)
+	for i := range seed {
+		seed[i] = math.Sin(float64(i)*0.3) + float64(i)*0.02
+	}
+	yb := floatsToBytes(seed)
+	xb := floatsToBytes(seed)
+	f.Add(2, 1, 2, 1, 5, yb, xb)
+	f.Add(1, 0, 1, 2, 4, yb, xb)
+
+	f.Fuzz(func(t *testing.T, maxP, maxD, maxQ, k, h int, ydata, xdata []byte) {
+		maxP, maxD, maxQ = boundOrder(maxP, 3), boundOrder(maxD, 2), boundOrder(maxQ, 3)
+		k = boundOrder(k, 2) + 1  // 1..3
+		h = boundOrder(h, 23) + 1 // 1..24
+		series := fuzzSeries(ydata)
+		if len(series) == 0 {
+			return // WithExog requires at least one row
+		}
+		X := fuzzMatrix(xdata, len(series), k)
+		futureX := fuzzMatrix(xdata, h, k)
+
+		model, err := AutoARIMA(series, maxP, maxD, maxQ, WithExog(X))
+		if err != nil {
+			return
+		}
+		checkExogForecasts(t, model, h, futureX)
+	})
+}
