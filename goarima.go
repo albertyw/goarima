@@ -229,7 +229,12 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
 		opt(&cfg)
 	}
 
-	if len(series) <= m.bigD*m.period+m.d+m.p+m.bigP*m.period {
+	// The differenced series (length len(series) − bigD·m − d) must be longer than
+	// both expanded lag polynomials so the forecast recursion has a last-observation
+	// tail to slice: the AR order is p + bigP·m and the MA order q + bigQ·m.
+	expandedAR := m.p + m.bigP*m.period
+	expandedMA := m.q + m.bigQ*m.period
+	if len(series) <= m.bigD*m.period+m.d+max(expandedAR, expandedMA) {
 		return errors.New("series too short for the requested ARIMA model")
 	}
 	if err := validateFinite(series); err != nil {

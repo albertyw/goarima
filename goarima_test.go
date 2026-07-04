@@ -126,6 +126,19 @@ func TestFitTooShort(t *testing.T) {
 	assert.Error(t, model.Fit([]float64{1, 2}))
 }
 
+func TestFitRejectsSeriesShorterThanExpandedMA(t *testing.T) {
+	// The expanded seasonal MA polynomial has degree q + Q·m (here 0 + 1·12 = 12),
+	// longer than the 8-point series. The length guard must account for the MA
+	// side too, otherwise the residual tail slice goes negative and panics.
+	model, err := NewSARIMA(0, 0, 0, 0, 0, 1, 12)
+	require.NoError(t, err)
+	series := make([]float64, 8)
+	for i := range series {
+		series[i] = math.Sin(float64(i))
+	}
+	assert.Error(t, model.Fit(series))
+}
+
 func TestForecastBeforeFitErrors(t *testing.T) {
 	// Forecasting an unfitted model must error rather than silently returning a
 	// plausible-looking all-zero forecast from uninitialized state.
