@@ -241,8 +241,8 @@ func WithMethod(m Method) FitOption {
 
 // WithExog supplies an n×k matrix of exogenous regressors X (n = len(series)),
 // fitting regression with ARIMA errors: y_t = X_t·β + η_t, where η follows the
-// ARIMA model. The estimated β is available via Beta(); forecasts must use
-// ForecastExog / ForecastIntervalExog with the matching future regressors.
+// ARIMA model. The estimated β is available via Beta(); forecasts must pass the
+// matching future regressors via WithFutureExog to Forecast / ForecastInterval.
 func WithExog(X [][]float64) FitOption {
 	return fitOptionFunc(func(c *fitConfig) { c.exog = X })
 }
@@ -439,17 +439,66 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
    Public API – Forecast
    --------------------------------------------------------------- */
 
-// Forecast returns the h-step point forecast on the original scale. Models fit
-// with exogenous regressors must use ForecastExog instead.
-func (m *ARIMA) Forecast(h int) ([]float64, error) {
-	if m.exogDim > 0 {
-		return nil, errors.New("model was fit with exogenous regressors; use ForecastExog")
+// ForecastOption configures Forecast/ForecastInterval. The only option is
+// WithFutureExog, required exactly when the model was fit with WithExog.
+type ForecastOption interface {
+	applyForecast(*forecastConfig)
+}
+
+// forecastConfig holds resolved ForecastOption state.
+type forecastConfig struct {
+	futureX [][]float64 // future exog rows (nil when not supplied)
+}
+
+// forecastOptionFunc adapts a config mutator into a ForecastOption.
+type forecastOptionFunc func(*forecastConfig)
+
+func (f forecastOptionFunc) applyForecast(c *forecastConfig) { f(c) }
+
+// checkFutureExog enforces the exog/future-exog contract shared by Forecast and
+// ForecastInterval: future regressors are required exactly when the model was fit
+// with exogenous regressors, mirroring statsmodels' exog= handling.
+func (m *ARIMA) checkFutureExog(futureX [][]float64) error {
+	switch {
+	case m.exogDim > 0 && futureX == nil:
+		return errors.New("model was fit with exogenous regressors; pass WithFutureExog")
+	case m.exogDim == 0 && futureX != nil:
+		return errors.New("model was not fit with exogenous regressors; do not pass WithFutureExog")
 	}
-	return m.forecastLevel(h)
+	return nil
+}
+
+// Forecast returns the h-step point forecast on the original scale. If the model
+// was fit with exogenous regressors (WithExog), the matching future regressors
+// must be supplied via WithFutureExog (and must not be supplied otherwise); the
+// regression mean of those regressors is then added to the forecast.
+func (m *ARIMA) Forecast(h int, opts ...ForecastOption) ([]float64, error) {
+	var cfg forecastConfig
+	for _, opt := range opts {
+		opt.applyForecast(&cfg)
+	}
+	if err := m.checkFutureExog(cfg.futureX); err != nil {
+		return nil, err
+	}
+	point, err := m.forecastLevel(h)
+	if err != nil {
+		return nil, err
+	}
+	if m.exogDim == 0 {
+		return point, nil
+	}
+	xb, err := exogMean(cfg.futureX, m.beta, h)
+	if err != nil {
+		return nil, err
+	}
+	for i := 0; i < h; i++ {
+		point[i] += xb[i]
+	}
+	return point, nil
 }
 
 // forecastLevel is the exog-agnostic point forecast (the η scale when exog is in
-// use). ForecastExog adds the regression mean back to its output.
+// use). Forecast adds the future regression mean back to its output.
 func (m *ARIMA) forecastLevel(h int) ([]float64, error) {
 	if !m.fitted {
 		return nil, errors.New("model must be fitted before forecasting")

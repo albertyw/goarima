@@ -136,40 +136,41 @@ func fuzzMatrix(data []byte, rows, cols int) [][]float64 {
 }
 
 // checkExogForecasts is checkForecasts for a model fit with exogenous regressors:
-// the exog forecasters must never panic and, when they succeed, return h finite,
-// correctly-sized values with lower ≤ upper.
+// the exog forecasters (Forecast/ForecastInterval with WithFutureExog) must never
+// panic and, when they succeed, return h finite, correctly-sized values with
+// lower ≤ upper.
 func checkExogForecasts(t *testing.T, m *ARIMA, h int, futureX [][]float64) {
 	t.Helper()
-	if pred, err := m.ForecastExog(h, futureX); err == nil {
+	if pred, err := m.Forecast(h, WithFutureExog(futureX)); err == nil {
 		if len(pred) != h {
-			t.Fatalf("ForecastExog returned %d values, want %d", len(pred), h)
+			t.Fatalf("Forecast returned %d values, want %d", len(pred), h)
 		}
 		for i, v := range pred {
 			if math.IsNaN(v) || math.IsInf(v, 0) {
-				t.Fatalf("ForecastExog produced non-finite value %v at %d", v, i)
+				t.Fatalf("Forecast produced non-finite value %v at %d", v, i)
 			}
 		}
 	}
-	if fc, err := m.ForecastIntervalExog(h, 0.95, futureX); err == nil {
+	if fc, err := m.ForecastInterval(h, 0.95, WithFutureExog(futureX)); err == nil {
 		if len(fc.Point) != h || len(fc.Lower) != h || len(fc.Upper) != h {
-			t.Fatalf("ForecastIntervalExog lengths %d/%d/%d, want %d", len(fc.Point), len(fc.Lower), len(fc.Upper), h)
+			t.Fatalf("ForecastInterval lengths %d/%d/%d, want %d", len(fc.Point), len(fc.Lower), len(fc.Upper), h)
 		}
 		for i := range fc.Point {
 			if math.IsNaN(fc.Lower[i]) || math.IsInf(fc.Lower[i], 0) ||
 				math.IsNaN(fc.Upper[i]) || math.IsInf(fc.Upper[i], 0) {
-				t.Fatalf("ForecastIntervalExog produced non-finite bound at %d", i)
+				t.Fatalf("ForecastInterval produced non-finite bound at %d", i)
 			}
 			if fc.Lower[i] > fc.Upper[i] {
-				t.Fatalf("ForecastIntervalExog lower %v > upper %v at %d", fc.Lower[i], fc.Upper[i], i)
+				t.Fatalf("ForecastInterval lower %v > upper %v at %d", fc.Lower[i], fc.Upper[i], i)
 			}
 		}
 	}
 }
 
-// FuzzExog drives regression-with-ARIMA-errors: WithExog Fit plus ForecastExog/
-// ForecastIntervalExog with a fuzzed n×k design matrix and h×k future rows,
-// asserting the β estimation, differencing, and forecast plumbing never panic
-// and successful exog forecasts stay finite and correctly sized.
+// FuzzExog drives regression-with-ARIMA-errors: WithExog Fit plus Forecast/
+// ForecastInterval with WithFutureExog over a fuzzed n×k design matrix and h×k
+// future rows, asserting the β estimation, differencing, and forecast plumbing
+// never panic and successful exog forecasts stay finite and correctly sized.
 func FuzzExog(f *testing.F) {
 	seed := make([]float64, 40)
 	for i := range seed {

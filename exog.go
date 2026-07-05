@@ -201,47 +201,10 @@ func exogMean(futureX [][]float64, beta []float64, h int) ([]float64, error) {
 	return out, nil
 }
 
-// ForecastExog returns an h-step forecast that adds the regression mean of the
-// supplied future regressors. The model must have been fit with WithExog and
-// futureX must be exactly h×k (k = number of regressors at fit time).
-func (m *ARIMA) ForecastExog(h int, futureX [][]float64) ([]float64, error) {
-	if m.exogDim == 0 {
-		return nil, errors.New("model was not fit with exogenous regressors; use Forecast")
-	}
-	eta, err := m.forecastLevel(h)
-	if err != nil {
-		return nil, err
-	}
-	xb, err := exogMean(futureX, m.beta, h)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]float64, h)
-	for i := 0; i < h; i++ {
-		out[i] = eta[i] + xb[i]
-	}
-	return out, nil
-}
-
-// ForecastIntervalExog is ForecastInterval for an exog model: the η-scale band
-// (σ²·Σψ²) shifted by the future regression mean. β estimation uncertainty is
-// excluded, matching statsmodels' default conf_int.
-func (m *ARIMA) ForecastIntervalExog(h int, level float64, futureX [][]float64) (*Forecast, error) {
-	if m.exogDim == 0 {
-		return nil, errors.New("model was not fit with exogenous regressors; use ForecastInterval")
-	}
-	fc, err := m.forecastIntervalCore(h, level)
-	if err != nil {
-		return nil, err
-	}
-	xb, err := exogMean(futureX, m.beta, h)
-	if err != nil {
-		return nil, err
-	}
-	for i := 0; i < h; i++ {
-		fc.Point[i] += xb[i]
-		fc.Lower[i] += xb[i]
-		fc.Upper[i] += xb[i]
-	}
-	return fc, nil
+// WithFutureExog supplies the future regressor rows for forecasting a model fit
+// with WithExog. futureX must be exactly h×k (k = number of regressors at fit
+// time); Forecast/ForecastInterval add the regression mean futureX·β. It is
+// required exactly when the model was fit with exogenous regressors.
+func WithFutureExog(X [][]float64) ForecastOption {
+	return forecastOptionFunc(func(c *forecastConfig) { c.futureX = X })
 }

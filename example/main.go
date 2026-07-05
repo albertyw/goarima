@@ -189,8 +189,8 @@ func exogExample(n, h int) (y []float64, X, futureX [][]float64) {
 
 // printExog fits a model with WithExog (+MLE) and prints one [goarima-exog]
 // block: the order, the estimated regression coefficients Beta(), and the
-// ForecastExog at the supplied future covariate. The distinct prefix keeps it out
-// of compare.py (which matches [goarima]); plot_exog.py parses it.
+// Forecast at the supplied future covariate (WithFutureExog). The distinct prefix
+// keeps it out of compare.py (which matches [goarima]); plot_exog.py parses it.
 func printExog(name string, p, d, q, horizon int, y []float64, X, futureX [][]float64) {
 	model, err := goarima.NewARIMA(goarima.Order{P: p, D: d, Q: q})
 	if err != nil {
@@ -201,7 +201,7 @@ func printExog(name string, p, d, q, horizon int, y []float64, X, futureX [][]fl
 		fmt.Printf("[goarima-exog] %s: %v\n", name, err)
 		return
 	}
-	forecast, err := model.ForecastExog(horizon, futureX)
+	forecast, err := model.Forecast(horizon, goarima.WithFutureExog(futureX))
 	if err != nil {
 		fmt.Printf("[goarima-exog] %s: %v\n", name, err)
 		return

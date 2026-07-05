@@ -524,11 +524,11 @@ func TestExogMatchesStatsmodels(t *testing.T) {
 	assertCoeffsClose(t, "beta", e.Beta, model.Beta(), 0.05)
 	assertCoeffsClose(t, "phi", e.Phi, model.Phi(), 0.05)
 
-	fc, err := model.ForecastExog(e.Horizon, e.FutureX)
+	fc, err := model.Forecast(e.Horizon, goarima.WithFutureExog(e.FutureX))
 	require.NoError(t, err)
 	assertForecastClose(t, e.Forecast, fc, 0.05)
 
-	iv, err := model.ForecastIntervalExog(e.Horizon, 1-e.Alpha, e.FutureX)
+	iv, err := model.ForecastInterval(e.Horizon, 1-e.Alpha, goarima.WithFutureExog(e.FutureX))
 	require.NoError(t, err)
 	for k := range iv.Point {
 		assert.Less(t, iv.Lower[k], iv.Upper[k], "step %d ordered", k+1)
