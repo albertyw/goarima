@@ -260,7 +260,7 @@ func FuzzAutoARIMA(f *testing.F) {
 		h = boundOrder(h, 23) + 1 // 1..24
 		series := fuzzSeries(data)
 
-		model, err := AutoARIMA(series, maxP, maxD, maxQ)
+		model, err := AutoARIMA(series, Bounds{MaxP: maxP, MaxD: maxD, MaxQ: maxQ})
 		if err != nil {
 			return
 		}
@@ -289,7 +289,7 @@ func FuzzAutoSARIMA(f *testing.F) {
 		h = boundOrder(h, 23) + 1 // 1..24
 		series := fuzzSeries(data)
 
-		model, err := AutoSARIMA(series, maxP, maxD, maxQ, maxBigP, maxBigQ, m)
+		model, err := AutoSARIMA(series, Bounds{MaxP: maxP, MaxD: maxD, MaxQ: maxQ}, SeasonalBounds{MaxP: maxBigP, MaxQ: maxBigQ, Period: m})
 		if err != nil {
 			return
 		}
@@ -323,7 +323,7 @@ func FuzzAutoExog(f *testing.F) {
 		X := fuzzMatrix(xdata, len(series), k)
 		futureX := fuzzMatrix(xdata, h, k)
 
-		model, err := AutoARIMA(series, maxP, maxD, maxQ, WithExog(X))
+		model, err := AutoARIMA(series, Bounds{MaxP: maxP, MaxD: maxD, MaxQ: maxQ}, WithExog(X))
 		if err != nil {
 			return
 		}

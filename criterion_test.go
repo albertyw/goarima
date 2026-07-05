@@ -82,9 +82,9 @@ func TestBICSelectsSimplerOrderThanAIC(t *testing.T) {
 	// BIC keeps AR(1); both agree on d, so the comparison is on p+q alone.
 	series := ar2Weak(160, 0.5, 0.15, 6)
 
-	aicModel, err := AutoARIMA(series, 4, 2, 4, WithCriterion(AIC))
+	aicModel, err := AutoARIMA(series, Bounds{MaxP: 4, MaxD: 2, MaxQ: 4}, WithCriterion(AIC))
 	require.NoError(t, err)
-	bicModel, err := AutoARIMA(series, 4, 2, 4, WithCriterion(BIC))
+	bicModel, err := AutoARIMA(series, Bounds{MaxP: 4, MaxD: 2, MaxQ: 4}, WithCriterion(BIC))
 	require.NoError(t, err)
 
 	a := aicModel.Order()
@@ -98,7 +98,7 @@ func TestAutoARIMAHonorsCriterion(t *testing.T) {
 	// with a finite forecast.
 	series := rampWithNoise(120, 0.3, 7)
 	for _, c := range []Criterion{AIC, BIC, AICc} {
-		model, err := AutoARIMA(series, 4, 2, 4, WithCriterion(c))
+		model, err := AutoARIMA(series, Bounds{MaxP: 4, MaxD: 2, MaxQ: 4}, WithCriterion(c))
 		require.NoError(t, err)
 		fc, err := model.Forecast(5)
 		require.NoError(t, err)

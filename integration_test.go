@@ -332,7 +332,7 @@ func TestAutoSelectionVsPmdarima(t *testing.T) {
 			require.NotNilf(t, s, "no series for %s", name)
 			maxP, maxD, maxQ := auto.Max[0], auto.Max[1], auto.Max[2]
 
-			model, err := goarima.AutoARIMA(s, maxP, maxD, maxQ)
+			model, err := goarima.AutoARIMA(s, goarima.Bounds{MaxP: maxP, MaxD: maxD, MaxQ: maxQ})
 			require.NoError(t, err)
 
 			o := model.Order()
@@ -364,7 +364,7 @@ func TestAutoARIMAAirPassengers(t *testing.T) {
 	series := parseTestSeries(t, airPassengersCSV)
 	require.Len(t, series, 144)
 
-	model, err := goarima.AutoARIMA(series, 5, 2, 5)
+	model, err := goarima.AutoARIMA(series, goarima.Bounds{MaxP: 5, MaxD: 2, MaxQ: 5})
 	require.NoError(t, err)
 
 	o := model.Order()
@@ -399,7 +399,7 @@ func TestNonInvertibleAirPassengersRejected(t *testing.T) {
 // test, d stays at 0 or 1 and the forecast is finite.
 func TestAutoARIMASunspotsNotOverDifferenced(t *testing.T) {
 	series := parseTestSeries(t, sunspotsCSV)
-	model, err := goarima.AutoARIMA(series, 5, 2, 5)
+	model, err := goarima.AutoARIMA(series, goarima.Bounds{MaxP: 5, MaxD: 2, MaxQ: 5})
 	require.NoError(t, err)
 
 	assert.LessOrEqual(t, model.Order().D, 1) // must not over-difference to d=2
@@ -583,7 +583,7 @@ var autoSeasonalCases = []struct {
 // fitGoldenAutoSeasonal runs AutoSARIMA and returns the fitted model + forecast.
 func fitGoldenAutoSeasonal(t *testing.T, s []float64, maxP, maxD, maxQ, maxBigP, maxBigQ, period, horizon int) (*goarima.ARIMA, []float64) {
 	t.Helper()
-	model, err := goarima.AutoSARIMA(s, maxP, maxD, maxQ, maxBigP, maxBigQ, period)
+	model, err := goarima.AutoSARIMA(s, goarima.Bounds{MaxP: maxP, MaxD: maxD, MaxQ: maxQ}, goarima.SeasonalBounds{MaxP: maxBigP, MaxQ: maxBigQ, Period: period})
 	require.NoError(t, err)
 	forecast, err := model.Forecast(horizon)
 	require.NoError(t, err)

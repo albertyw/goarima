@@ -365,7 +365,7 @@ func TestAutoARIMAWithExogSelectsAndForecasts(t *testing.T) {
 	for i := range X {
 		X[i] = []float64{x[i]}
 	}
-	m, err := AutoARIMA(y, 3, 1, 3, WithExog(X))
+	m, err := AutoARIMA(y, Bounds{MaxP: 3, MaxD: 1, MaxQ: 3}, WithExog(X))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -402,7 +402,7 @@ func TestAutoSARIMAWithExog(t *testing.T) {
 	for i := range X {
 		X[i] = []float64{x[i]}
 	}
-	model, err := AutoSARIMA(y, 2, 1, 2, 1, 1, m, WithExog(X))
+	model, err := AutoSARIMA(y, Bounds{MaxP: 2, MaxD: 1, MaxQ: 2}, SeasonalBounds{MaxP: 1, MaxQ: 1, Period: m}, WithExog(X))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -430,10 +430,10 @@ func TestAutoExogInvalidMatrixErrors(t *testing.T) {
 		y[i] = math.Sin(float64(i))
 	}
 	badX := [][]float64{{1}, {2}} // wrong row count
-	if _, err := AutoARIMA(y, 2, 1, 2, WithExog(badX)); err == nil {
+	if _, err := AutoARIMA(y, Bounds{MaxP: 2, MaxD: 1, MaxQ: 2}, WithExog(badX)); err == nil {
 		t.Error("AutoARIMA with mismatched exog rows should error")
 	}
-	if _, err := AutoSARIMA(y, 2, 1, 2, 1, 1, 12, WithExog(badX)); err == nil {
+	if _, err := AutoSARIMA(y, Bounds{MaxP: 2, MaxD: 1, MaxQ: 2}, SeasonalBounds{MaxP: 1, MaxQ: 1, Period: 12}, WithExog(badX)); err == nil {
 		t.Error("AutoSARIMA with mismatched exog rows should error")
 	}
 }

@@ -51,7 +51,7 @@ func TestSelectD(t *testing.T) {
 
 func TestAutoARIMAWhiteNoise(t *testing.T) {
 	series := genAR1(400, 0, 5)
-	model, err := AutoARIMA(series, 3, 2, 3)
+	model, err := AutoARIMA(series, Bounds{MaxP: 3, MaxD: 2, MaxQ: 3})
 	require.NoError(t, err)
 	require.NotNil(t, model)
 
@@ -70,7 +70,7 @@ func TestAutoARIMAWhiteNoise(t *testing.T) {
 
 func TestAutoARIMATrendChoosesDifferencing(t *testing.T) {
 	series := rampWithNoise(400, 0.7, 6)
-	model, err := AutoARIMA(series, 3, 2, 3)
+	model, err := AutoARIMA(series, Bounds{MaxP: 3, MaxD: 2, MaxQ: 3})
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, model.Order().D, 1)
 
@@ -82,7 +82,7 @@ func TestAutoARIMATrendChoosesDifferencing(t *testing.T) {
 
 func TestAutoARIMARespectsBounds(t *testing.T) {
 	series := genARMA11(400, 0.5, 0.3, 7)
-	model, err := AutoARIMA(series, 2, 1, 2)
+	model, err := AutoARIMA(series, Bounds{MaxP: 2, MaxD: 1, MaxQ: 2})
 	require.NoError(t, err)
 	o := model.Order()
 	assert.LessOrEqual(t, o.P, 2)
@@ -92,10 +92,10 @@ func TestAutoARIMARespectsBounds(t *testing.T) {
 }
 
 func TestAutoARIMAErrors(t *testing.T) {
-	_, err := AutoARIMA([]float64{1.0}, 1, 1, 1)
+	_, err := AutoARIMA([]float64{1.0}, Bounds{MaxP: 1, MaxD: 1, MaxQ: 1})
 	assert.Error(t, err)
 
-	_, err = AutoARIMA(genAR1(100, 0.3, 8), -1, 1, 1)
+	_, err = AutoARIMA(genAR1(100, 0.3, 8), Bounds{MaxP: -1, MaxD: 1, MaxQ: 1})
 	assert.Error(t, err)
 }
 
@@ -105,7 +105,7 @@ func TestAutoARIMARejectsNonFiniteInput(t *testing.T) {
 	// that forecasts NaN). AutoARIMA must reject non-finite input up front.
 	series := genAR1(100, 0.3, 9)
 	series[50] = math.NaN()
-	_, err := AutoARIMA(series, 2, 1, 2)
+	_, err := AutoARIMA(series, Bounds{MaxP: 2, MaxD: 1, MaxQ: 2})
 	assert.ErrorContains(t, err, "non-finite")
 }
 
@@ -113,7 +113,7 @@ func TestAutoARIMAWithCSSRefinement(t *testing.T) {
 	// AutoARIMA must accept and thread the refinement option through to its
 	// fits, still returning a usable, finite-forecasting model.
 	series := genARMA11(500, 0.5, 0.4, 2)
-	model, err := AutoARIMA(series, 3, 1, 3, WithCSSRefinement())
+	model, err := AutoARIMA(series, Bounds{MaxP: 3, MaxD: 1, MaxQ: 3}, WithCSSRefinement())
 	require.NoError(t, err)
 	require.NotNil(t, model)
 
@@ -128,7 +128,7 @@ func TestAutoARIMAWithMLE(t *testing.T) {
 	// AutoARIMA must accept and thread the MLE option through to its fits, still
 	// returning a usable, finite-forecasting model.
 	series := genARMA11(500, 0.5, 0.4, 2)
-	model, err := AutoARIMA(series, 3, 1, 3, WithMLE())
+	model, err := AutoARIMA(series, Bounds{MaxP: 3, MaxD: 1, MaxQ: 3}, WithMLE())
 	require.NoError(t, err)
 	require.NotNil(t, model)
 

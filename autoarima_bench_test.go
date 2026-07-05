@@ -48,7 +48,7 @@ func benchSeasonalSeries(b *testing.B) []float64 {
 func BenchmarkAutoARIMAGrid(b *testing.B) {
 	s := benchSeries(b)
 	for b.Loop() {
-		if _, err := AutoARIMA(s, 5, 2, 5); err != nil {
+		if _, err := AutoARIMA(s, Bounds{MaxP: 5, MaxD: 2, MaxQ: 5}); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -57,7 +57,7 @@ func BenchmarkAutoARIMAGrid(b *testing.B) {
 func BenchmarkAutoARIMAGridParallel(b *testing.B) {
 	s := benchSeries(b)
 	for b.Loop() {
-		if _, err := AutoARIMA(s, 5, 2, 5, WithParallel()); err != nil {
+		if _, err := AutoARIMA(s, Bounds{MaxP: 5, MaxD: 2, MaxQ: 5}, WithParallel()); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -66,7 +66,7 @@ func BenchmarkAutoARIMAGridParallel(b *testing.B) {
 func BenchmarkAutoARIMAStepwise(b *testing.B) {
 	s := benchSeries(b)
 	for b.Loop() {
-		if _, err := AutoARIMA(s, 5, 2, 5, WithStepwise()); err != nil {
+		if _, err := AutoARIMA(s, Bounds{MaxP: 5, MaxD: 2, MaxQ: 5}, WithStepwise()); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -75,7 +75,7 @@ func BenchmarkAutoARIMAStepwise(b *testing.B) {
 func BenchmarkAutoSARIMAGrid(b *testing.B) {
 	s := benchSeasonalSeries(b)
 	for b.Loop() {
-		if _, err := AutoSARIMA(s, 2, 1, 2, 1, 1, 12); err != nil {
+		if _, err := AutoSARIMA(s, Bounds{MaxP: 2, MaxD: 1, MaxQ: 2}, SeasonalBounds{MaxP: 1, MaxQ: 1, Period: 12}); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -84,7 +84,7 @@ func BenchmarkAutoSARIMAGrid(b *testing.B) {
 func BenchmarkAutoSARIMAStepwise(b *testing.B) {
 	s := benchSeasonalSeries(b)
 	for b.Loop() {
-		if _, err := AutoSARIMA(s, 2, 1, 2, 1, 1, 12, WithStepwise()); err != nil {
+		if _, err := AutoSARIMA(s, Bounds{MaxP: 2, MaxD: 1, MaxQ: 2}, SeasonalBounds{MaxP: 1, MaxQ: 1, Period: 12}, WithStepwise()); err != nil {
 			b.Fatal(err)
 		}
 	}

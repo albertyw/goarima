@@ -28,9 +28,9 @@ func TestParallelGridMatchesSerial(t *testing.T) {
 		ar1Series(250, -0.4, 2),
 		rampWithNoise(220, 0.5, 3),
 	} {
-		serial, err := AutoARIMA(series, 4, 2, 4)
+		serial, err := AutoARIMA(series, Bounds{MaxP: 4, MaxD: 2, MaxQ: 4})
 		require.NoError(t, err)
-		par, err := AutoARIMA(series, 4, 2, 4, WithParallel())
+		par, err := AutoARIMA(series, Bounds{MaxP: 4, MaxD: 2, MaxQ: 4}, WithParallel())
 		require.NoError(t, err)
 		sameModel(t, serial, par)
 	}
@@ -42,9 +42,9 @@ func TestParallelMatchesSerialWithMLE(t *testing.T) {
 	// concurrent selection must still be bit-identical to the serial one. Bounds are
 	// kept small because MLE fits are slow.
 	series := ar1Series(160, 0.6, 21)
-	serial, err := AutoARIMA(series, 2, 1, 2, WithMLE())
+	serial, err := AutoARIMA(series, Bounds{MaxP: 2, MaxD: 1, MaxQ: 2}, WithMLE())
 	require.NoError(t, err)
-	par, err := AutoARIMA(series, 2, 1, 2, WithMLE(), WithParallel())
+	par, err := AutoARIMA(series, Bounds{MaxP: 2, MaxD: 1, MaxQ: 2}, WithMLE(), WithParallel())
 	require.NoError(t, err)
 	sameModel(t, serial, par)
 }
@@ -54,9 +54,9 @@ func TestParallelStepwiseMatchesSerial(t *testing.T) {
 		ar1Series(300, 0.6, 4),
 		rampWithNoise(240, 0.3, 5),
 	} {
-		serial, err := AutoARIMA(series, 5, 2, 5, WithStepwise())
+		serial, err := AutoARIMA(series, Bounds{MaxP: 5, MaxD: 2, MaxQ: 5}, WithStepwise())
 		require.NoError(t, err)
-		par, err := AutoARIMA(series, 5, 2, 5, WithStepwise(), WithParallel())
+		par, err := AutoARIMA(series, Bounds{MaxP: 5, MaxD: 2, MaxQ: 5}, WithStepwise(), WithParallel())
 		require.NoError(t, err)
 		sameModel(t, serial, par)
 	}

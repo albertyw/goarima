@@ -71,7 +71,7 @@ func report(label, name string, model *goarima.ARIMA, horizon int) {
 // hard, weakly-identified orders. Order selection stays on the fast HR path;
 // only the single chosen order is MLE-refined, so the demo stays quick.
 func runAuto(name string, series []float64, horizon int) {
-	model, err := goarima.AutoARIMA(series, 5, 2, 5)
+	model, err := goarima.AutoARIMA(series, goarima.Bounds{MaxP: 5, MaxD: 2, MaxQ: 5})
 	if err != nil {
 		fmt.Printf("[goarima] %s: %v\n", name, err)
 		return
@@ -89,7 +89,7 @@ func runAuto(name string, series []float64, horizon int) {
 // prints them under a distinct [goarima-seasonal] label. compare.py parses only
 // the [goarima] blocks, so this extra block is ignored there.
 func runAutoSeasonal(name string, series []float64, period, horizon int) {
-	model, err := goarima.AutoSARIMA(series, 3, 1, 3, 1, 1, period)
+	model, err := goarima.AutoSARIMA(series, goarima.Bounds{MaxP: 3, MaxD: 1, MaxQ: 3}, goarima.SeasonalBounds{MaxP: 1, MaxQ: 1, Period: period})
 	if err != nil {
 		fmt.Printf("[goarima-seasonal] %s: %v\n", name, err)
 		return
@@ -111,7 +111,7 @@ func runAutoSeasonal(name string, series []float64, period, horizon int) {
 // fitAutoMLE selects orders with AutoARIMA and refits them with exact MLE (as
 // runAuto does), returning the model and its "ARIMA(p,d,q)" label.
 func fitAutoMLE(series []float64) (*goarima.ARIMA, string, error) {
-	model, err := goarima.AutoARIMA(series, 5, 2, 5)
+	model, err := goarima.AutoARIMA(series, goarima.Bounds{MaxP: 5, MaxD: 2, MaxQ: 5})
 	if err != nil {
 		return nil, "", err
 	}
@@ -127,7 +127,7 @@ func fitAutoMLE(series []float64) (*goarima.ARIMA, string, error) {
 
 // fitAutoSeasonalMLE is fitAutoMLE's seasonal counterpart, via AutoSARIMA.
 func fitAutoSeasonalMLE(series []float64, period int) (*goarima.ARIMA, string, error) {
-	model, err := goarima.AutoSARIMA(series, 3, 1, 3, 1, 1, period)
+	model, err := goarima.AutoSARIMA(series, goarima.Bounds{MaxP: 3, MaxD: 1, MaxQ: 3}, goarima.SeasonalBounds{MaxP: 1, MaxQ: 1, Period: period})
 	if err != nil {
 		return nil, "", err
 	}
