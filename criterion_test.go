@@ -61,7 +61,7 @@ func TestScoreBICPenalizesParametersMoreThanAIC(t *testing.T) {
 func TestWithCriterionSetsConfig(t *testing.T) {
 	var cfg fitConfig
 	assert.Equal(t, AIC, cfg.criterion, "default criterion is AIC (zero value)")
-	WithCriterion(BIC)(&cfg)
+	WithCriterion(BIC).applyAuto(&cfg)
 	assert.Equal(t, BIC, cfg.criterion)
 }
 

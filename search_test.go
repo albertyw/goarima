@@ -22,7 +22,7 @@ func ar1Series(n int, phi float64, seed int64) []float64 {
 func TestWithStepwiseSetsConfig(t *testing.T) {
 	var cfg fitConfig
 	assert.False(t, cfg.stepwise, "default is the exhaustive grid")
-	WithStepwise()(&cfg)
+	WithStepwise().applyAuto(&cfg)
 	assert.True(t, cfg.stepwise)
 }
 

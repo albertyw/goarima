@@ -10,7 +10,7 @@ import (
 func TestWithParallelSetsConfig(t *testing.T) {
 	var cfg fitConfig
 	assert.False(t, cfg.parallel, "default is serial")
-	WithParallel()(&cfg)
+	WithParallel().applyAuto(&cfg)
 	assert.True(t, cfg.parallel)
 }
 

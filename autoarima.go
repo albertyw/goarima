@@ -45,7 +45,7 @@ type SeasonalBounds struct {
 // residual variance and thus influences selection, but the score is not the
 // exact Gaussian-likelihood criterion. A likelihood-based criterion is left to
 // a later phase.
-func AutoARIMA(series []float64, max Bounds, opts ...FitOption) (*ARIMA, error) {
+func AutoARIMA(series []float64, max Bounds, opts ...AutoOption) (*ARIMA, error) {
 	maxP, maxD, maxQ := max.MaxP, max.MaxD, max.MaxQ
 	if maxP < 0 || maxD < 0 || maxQ < 0 {
 		return nil, errors.New("AutoARIMA: max orders must be non-negative")
@@ -59,8 +59,9 @@ func AutoARIMA(series []float64, max Bounds, opts ...FitOption) (*ARIMA, error) 
 
 	var cfg fitConfig
 	for _, opt := range opts {
-		opt(&cfg)
+		opt.applyAuto(&cfg)
 	}
+	fitOpts := fitOptions(opts)
 	ctx := cfg.ctx
 	if ctx == nil {
 		ctx = context.Background()
@@ -89,7 +90,7 @@ func AutoARIMA(series []float64, max Bounds, opts ...FitOption) (*ARIMA, error) 
 		maxP:   maxP,
 		maxQ:   maxQ,
 		crit:   cfg.criterion,
-		opts:   opts,
+		opts:   fitOpts,
 		ctx:    ctx,
 	}
 
@@ -111,10 +112,25 @@ func AutoARIMA(series []float64, max Bounds, opts ...FitOption) (*ARIMA, error) 
 	if err != nil {
 		return nil, err
 	}
-	if err := best.Fit(series, opts...); err != nil {
+	if err := best.Fit(series, fitOpts...); err != nil {
 		return nil, err
 	}
 	return best, nil
+}
+
+// fitOptions returns the subset of opts that are also FitOptions — the
+// fit-relevant options (WithMethod, WithExog, WithRootRepair) — to thread through
+// to every candidate fit and the final refit. Search-only options
+// (WithCriterion, WithStepwise, WithParallel, WithContext) implement only
+// AutoOption and are excluded.
+func fitOptions(opts []AutoOption) []FitOption {
+	var out []FitOption
+	for _, opt := range opts {
+		if fo, ok := opt.(FitOption); ok {
+			out = append(out, fo)
+		}
+	}
+	return out
 }
 
 // AutoSARIMA selects seasonal ARIMA orders automatically for a known seasonal
@@ -129,7 +145,7 @@ func AutoARIMA(series []float64, max Bounds, opts ...FitOption) (*ARIMA, error) 
 // The criterion defaults to AIC (WithCriterion to change it). Any FitOption
 // (e.g. WithMethod) is threaded through to every candidate fit and the final
 // refit, exactly as in AutoARIMA.
-func AutoSARIMA(series []float64, max Bounds, seasonal SeasonalBounds, opts ...FitOption) (*ARIMA, error) {
+func AutoSARIMA(series []float64, max Bounds, seasonal SeasonalBounds, opts ...AutoOption) (*ARIMA, error) {
 	maxP, maxD, maxQ := max.MaxP, max.MaxD, max.MaxQ
 	maxBigP, maxBigQ, m := seasonal.MaxP, seasonal.MaxQ, seasonal.Period
 	if maxP < 0 || maxD < 0 || maxQ < 0 || maxBigP < 0 || maxBigQ < 0 {
@@ -147,8 +163,9 @@ func AutoSARIMA(series []float64, max Bounds, seasonal SeasonalBounds, opts ...F
 
 	var cfg fitConfig
 	for _, opt := range opts {
-		opt(&cfg)
+		opt.applyAuto(&cfg)
 	}
+	fitOpts := fitOptions(opts)
 	ctx := cfg.ctx
 	if ctx == nil {
 		ctx = context.Background()
@@ -182,7 +199,7 @@ func AutoSARIMA(series []float64, max Bounds, seasonal SeasonalBounds, opts ...F
 		bigD:    bigD,
 		period:  m,
 		crit:    cfg.criterion,
-		opts:    opts,
+		opts:    fitOpts,
 		ctx:     ctx,
 	}
 
@@ -203,7 +220,7 @@ func AutoSARIMA(series []float64, max Bounds, seasonal SeasonalBounds, opts ...F
 	if err != nil {
 		return nil, err
 	}
-	if err := best.Fit(series, opts...); err != nil {
+	if err := best.Fit(series, fitOpts...); err != nil {
 		return nil, err
 	}
 	return best, nil

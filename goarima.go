@@ -181,9 +181,38 @@ type fitConfig struct {
 	ctx context.Context
 }
 
-// FitOption configures optional Fit behavior. The zero set of options keeps the
-// default Hannan-Rissanen estimator.
-type FitOption func(*fitConfig)
+// FitOption configures optional Fit behavior; every FitOption is also an
+// AutoOption, since the auto searches fit too. The zero set of options keeps the
+// default Hannan-Rissanen estimator. Fit-relevant options are WithMethod,
+// WithExog, and WithRootRepair.
+type FitOption interface {
+	AutoOption
+	applyFit(*fitConfig)
+}
+
+// AutoOption configures an AutoARIMA/AutoSARIMA order search. It is the superset
+// of FitOption: every FitOption is an AutoOption (threaded through to the
+// candidate and final fits), plus the search-only options WithCriterion,
+// WithStepwise, WithParallel, and WithContext — which apply only to the search
+// and, by not satisfying FitOption, cannot be passed to a plain Fit.
+type AutoOption interface {
+	applyAuto(*fitConfig)
+}
+
+// fitOptionFunc adapts a config mutator into a FitOption. Because it implements
+// both applyFit and applyAuto, a fitOptionFunc satisfies FitOption and AutoOption
+// — so WithMethod/WithExog/WithRootRepair work with Fit and the auto searches.
+type fitOptionFunc func(*fitConfig)
+
+func (f fitOptionFunc) applyFit(c *fitConfig)  { f(c) }
+func (f fitOptionFunc) applyAuto(c *fitConfig) { f(c) }
+
+// autoOptionFunc adapts a config mutator into a search-only AutoOption. It
+// implements applyAuto only, so it is not a FitOption and cannot be passed to
+// Fit (a compile-time error) — exactly the fit-vs-search separation we want.
+type autoOptionFunc func(*fitConfig)
+
+func (f autoOptionFunc) applyAuto(c *fitConfig) { f(c) }
 
 // Method selects the estimator Fit uses. The default (HannanRissanen) is a
 // linear-algebra seed with no optimizer; CSS and MLE refine that seed and are
@@ -207,7 +236,7 @@ const (
 // WithMethod selects the estimator (HannanRissanen, CSS, or MLE). The default,
 // used when WithMethod is not supplied, is HannanRissanen.
 func WithMethod(m Method) FitOption {
-	return func(c *fitConfig) { c.method = m }
+	return fitOptionFunc(func(c *fitConfig) { c.method = m })
 }
 
 // WithExog supplies an n×k matrix of exogenous regressors X (n = len(series)),
@@ -215,30 +244,32 @@ func WithMethod(m Method) FitOption {
 // ARIMA model. The estimated β is available via Beta(); forecasts must use
 // ForecastExog / ForecastIntervalExog with the matching future regressors.
 func WithExog(X [][]float64) FitOption {
-	return func(c *fitConfig) { c.exog = X }
+	return fitOptionFunc(func(c *fitConfig) { c.exog = X })
 }
 
 // WithCriterion selects the information criterion AutoARIMA minimizes during
-// order selection (AIC, BIC, or AICc). The default is AIC. This option only
-// affects AutoARIMA; Fit ignores it.
-func WithCriterion(c Criterion) FitOption {
-	return func(cfg *fitConfig) { cfg.criterion = c }
+// order selection (AIC, BIC, or AICc). The default is AIC. This is a search-only
+// option: it returns an AutoOption, so it cannot be passed to a plain Fit.
+func WithCriterion(c Criterion) AutoOption {
+	return autoOptionFunc(func(cfg *fitConfig) { cfg.criterion = c })
 }
 
 // WithStepwise makes AutoARIMA select p and q with a Hyndman-Khandakar stepwise
 // neighbor search instead of the exhaustive grid. It usually fits far fewer
 // candidates at the cost of being a heuristic (it can miss the grid's global
-// optimum). This option only affects AutoARIMA; Fit ignores it.
-func WithStepwise() FitOption {
-	return func(c *fitConfig) { c.stepwise = true }
+// optimum). This is a search-only option: it returns an AutoOption, so it cannot
+// be passed to a plain Fit.
+func WithStepwise() AutoOption {
+	return autoOptionFunc(func(c *fitConfig) { c.stepwise = true })
 }
 
 // WithParallel makes AutoARIMA fit candidate orders concurrently, across up to
 // GOMAXPROCS goroutines. Selection is deterministic and identical to the serial
 // search (results are reduced in a fixed order), so this only changes speed.
-// This option only affects AutoARIMA; Fit ignores it.
-func WithParallel() FitOption {
-	return func(c *fitConfig) { c.parallel = true }
+// This is a search-only option: it returns an AutoOption, so it cannot be passed
+// to a plain Fit.
+func WithParallel() AutoOption {
+	return autoOptionFunc(func(c *fitConfig) { c.parallel = true })
 }
 
 // WithRootRepair makes Fit project an unstable Hannan-Rissanen estimate back into
@@ -248,22 +279,22 @@ func WithParallel() FitOption {
 // yields a valid seed that the optimizer then refines) and threads through
 // AutoARIMA/AutoSARIMA, where it makes otherwise-rejected orders eligible.
 func WithRootRepair() FitOption {
-	return func(c *fitConfig) { c.repair = true }
+	return fitOptionFunc(func(c *fitConfig) { c.repair = true })
 }
 
 // WithContext supplies a context whose cancellation aborts an AutoARIMA/AutoSARIMA
-// order search; the call then returns an error wrapping the context cause. Like
-// the other search options it only affects AutoARIMA/AutoSARIMA — a plain Fit
-// ignores it. Cancellation is observed between candidate fits (a single in-flight
+// order search; the call then returns an error wrapping the context cause. This is
+// a search-only option: it returns an AutoOption, so it cannot be passed to a
+// plain Fit. Cancellation is observed between candidate fits (a single in-flight
 // fit is not interrupted). A nil context is treated as context.Background().
-func WithContext(ctx context.Context) FitOption {
-	return func(c *fitConfig) { c.ctx = ctx }
+func WithContext(ctx context.Context) AutoOption {
+	return autoOptionFunc(func(c *fitConfig) { c.ctx = ctx })
 }
 
 func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
 	var cfg fitConfig
 	for _, opt := range opts {
-		opt(&cfg)
+		opt.applyFit(&cfg)
 	}
 
 	// The differenced series (length len(series) − bigD·m − d) must be longer than

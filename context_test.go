@@ -86,16 +86,3 @@ func TestAutoARIMALiveContextSameResult(t *testing.T) {
 		t.Errorf("live ctx changed orders: %v vs %v", base.Order(), withCtx.Order())
 	}
 }
-
-func TestFitIgnoresContext(t *testing.T) {
-	s := rampWithNoise(100, 0.05, 7)
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	m, err := NewARIMA(Order{P: 1, D: 1, Q: 0})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := m.Fit(s, WithContext(ctx)); err != nil {
-		t.Errorf("Fit should ignore WithContext, got %v", err)
-	}
-}
