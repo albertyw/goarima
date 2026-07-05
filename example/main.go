@@ -78,7 +78,7 @@ func runAuto(name string, series []float64, horizon int) {
 	}
 	o := model.Order()
 	if refined, rerr := goarima.NewARIMA(o); rerr == nil {
-		if ferr := refined.Fit(series, goarima.WithMLE()); ferr == nil {
+		if ferr := refined.Fit(series, goarima.WithMethod(goarima.MLE)); ferr == nil {
 			model = refined // keep the HR fit if MLE refinement fails
 		}
 	}
@@ -118,7 +118,7 @@ func fitAutoMLE(series []float64) (*goarima.ARIMA, string, error) {
 	o := model.Order()
 	p, d, q := o.P, o.D, o.Q
 	if refined, rerr := goarima.NewARIMA(o); rerr == nil {
-		if refined.Fit(series, goarima.WithMLE()) == nil {
+		if refined.Fit(series, goarima.WithMethod(goarima.MLE)) == nil {
 			model = refined // keep the HR fit if MLE refinement fails
 		}
 	}
@@ -136,7 +136,7 @@ func fitAutoSeasonalMLE(series []float64, period int) (*goarima.ARIMA, string, e
 	so := model.SeasonalOrder()
 	bigP, bigD, bigQ, m := so.P, so.D, so.Q, so.Period
 	if refined, rerr := goarima.NewSARIMA(o, so); rerr == nil {
-		if refined.Fit(series, goarima.WithMLE()) == nil {
+		if refined.Fit(series, goarima.WithMethod(goarima.MLE)) == nil {
 			model = refined
 		}
 	}
@@ -197,7 +197,7 @@ func printExog(name string, p, d, q, horizon int, y []float64, X, futureX [][]fl
 		fmt.Printf("[goarima-exog] %s: %v\n", name, err)
 		return
 	}
-	if err := model.Fit(y, goarima.WithExog(X), goarima.WithMLE()); err != nil {
+	if err := model.Fit(y, goarima.WithExog(X), goarima.WithMethod(goarima.MLE)); err != nil {
 		fmt.Printf("[goarima-exog] %s: %v\n", name, err)
 		return
 	}

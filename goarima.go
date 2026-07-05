@@ -170,8 +170,7 @@ func (m *ARIMA) Sigma2() float64 {
 // fitConfig holds optional Fit behavior toggled by FitOption values. The
 // criterion field is read only by AutoARIMA (Fit ignores it).
 type fitConfig struct {
-	refine    bool        // refine the Hannan-Rissanen estimate by minimizing the CSS
-	mle       bool        // refine the Hannan-Rissanen estimate by exact Gaussian MLE
+	method    Method      // estimator: Hannan-Rissanen (default), CSS, or MLE refinement
 	criterion Criterion   // AutoARIMA-only: information criterion to minimize
 	stepwise  bool        // AutoARIMA-only: use the stepwise search instead of the grid
 	parallel  bool        // AutoARIMA-only: fit candidate orders concurrently
@@ -186,25 +185,29 @@ type fitConfig struct {
 // default Hannan-Rissanen estimator.
 type FitOption func(*fitConfig)
 
-// WithCSSRefinement enables conditional-sum-of-squares refinement of the
-// Hannan-Rissanen coefficient estimate (see refine.go). It tightens the
-// coefficients toward a maximum-likelihood fit and can only improve the fit:
-// a refined estimate is kept only if it is stationary, invertible, and has a
-// lower CSS than the Hannan-Rissanen seed, otherwise the seed is used unchanged.
-func WithCSSRefinement() FitOption {
-	return func(c *fitConfig) { c.refine = true }
-}
+// Method selects the estimator Fit uses. The default (HannanRissanen) is a
+// linear-algebra seed with no optimizer; CSS and MLE refine that seed and are
+// never worse than it (a refined estimate is kept only if it is stationary,
+// invertible, and strictly improves the objective, otherwise the seed is used).
+type Method int
 
-// WithMLE enables exact Gaussian maximum-likelihood refinement of the
-// Hannan-Rissanen coefficient estimate via the Kalman filter (see mle.go and
-// statespace.go). It matches the exact-likelihood fit of modern statsmodels
-// (method="statespace") and, like WithCSSRefinement, is never worse than the
-// Hannan-Rissanen seed: a refined estimate is kept only if it is stationary,
-// invertible, and has a strictly lower negative log-likelihood, otherwise the
-// seed is used unchanged. If both WithMLE and WithCSSRefinement are supplied,
-// MLE takes precedence.
-func WithMLE() FitOption {
-	return func(c *fitConfig) { c.mle = true }
+const (
+	// HannanRissanen is the default: a two-stage linear-algebra estimate with no
+	// iterative optimizer (see estimate.go).
+	HannanRissanen Method = iota
+	// CSS refines the Hannan-Rissanen seed by minimizing the conditional sum of
+	// squares (see refine.go).
+	CSS
+	// MLE refines the Hannan-Rissanen seed by exact Gaussian maximum likelihood
+	// via the Kalman filter (see mle.go and statespace.go). It matches the
+	// exact-likelihood fit of modern statsmodels (method="statespace").
+	MLE
+)
+
+// WithMethod selects the estimator (HannanRissanen, CSS, or MLE). The default,
+// used when WithMethod is not supplied, is HannanRissanen.
+func WithMethod(m Method) FitOption {
+	return func(c *fitConfig) { c.method = m }
 }
 
 // WithExog supplies an n×k matrix of exogenous regressors X (n = len(series)),
@@ -241,8 +244,8 @@ func WithParallel() FitOption {
 // WithRootRepair makes Fit project an unstable Hannan-Rissanen estimate back into
 // the stationary/invertible region — reflecting any AR/MA root on or inside the
 // unit circle to its reciprocal (see roots.go) — instead of returning an error.
-// It is off by default. It composes with WithMLE/WithCSSRefinement (repair yields
-// a valid seed that the optimizer then refines) and threads through
+// It is off by default. It composes with WithMethod(CSS)/WithMethod(MLE) (repair
+// yields a valid seed that the optimizer then refines) and threads through
 // AutoARIMA/AutoSARIMA, where it makes otherwise-rejected orders eligible.
 func WithRootRepair() FitOption {
 	return func(c *fitConfig) { c.repair = true }
@@ -334,15 +337,14 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
 
 	// Optionally refine the coefficients over the multiplicative factor vector
 	// (φ, Φₛ, θ, Θₛ), then recompute the residuals so sigma2 and the stored lastE
-	// reflect the refined fit. MLE takes precedence over CSS when both are
-	// requested. The seasonal refiners reduce to the non-seasonal case when P=Q=0.
-	// With exog, β is refined jointly with the factors and η (and so the anchors
-	// and z) is rebuilt from the refined β.
-	if (cfg.mle || cfg.refine) && len(phi)+len(theta)+len(sphi)+len(stheta)+len(m.beta) > 0 {
+	// reflect the refined fit. The seasonal refiners reduce to the non-seasonal
+	// case when P=Q=0. With exog, β is refined jointly with the factors and η (and
+	// so the anchors and z) is rebuilt from the refined β.
+	if cfg.method != HannanRissanen && len(phi)+len(theta)+len(sphi)+len(stheta)+len(m.beta) > 0 {
 		if cfg.exog != nil {
 			m.beta, phi, sphi, theta, stheta = refineExog(
 				series, cfg.exog, m.beta, phi, sphi, theta, stheta,
-				m.d, m.bigD, m.period, cfg.mle)
+				m.d, m.bigD, m.period, cfg.method == MLE)
 			// Refined β changes η; rebuild the level-scale fit series, anchors, and z.
 			fitSeries = regressionResiduals(series, cfg.exog, m.beta)
 			m.lastOrig = fitSeries[len(fitSeries)-1]
@@ -367,10 +369,10 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
 				z[i] = y[i] - m.mu
 			}
 		} else {
-			switch {
-			case cfg.mle:
+			switch cfg.method {
+			case MLE:
 				phi, sphi, theta, stheta = refineSeasonalMLE(z, phi, sphi, theta, stheta, m.period)
-			case cfg.refine:
+			case CSS:
 				phi, sphi, theta, stheta = refineSeasonalCSS(z, phi, sphi, theta, stheta, m.period)
 			}
 		}

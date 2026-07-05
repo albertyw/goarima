@@ -42,9 +42,9 @@ func TestParallelMatchesSerialWithMLE(t *testing.T) {
 	// concurrent selection must still be bit-identical to the serial one. Bounds are
 	// kept small because MLE fits are slow.
 	series := ar1Series(160, 0.6, 21)
-	serial, err := AutoARIMA(series, Bounds{MaxP: 2, MaxD: 1, MaxQ: 2}, WithMLE())
+	serial, err := AutoARIMA(series, Bounds{MaxP: 2, MaxD: 1, MaxQ: 2}, WithMethod(MLE))
 	require.NoError(t, err)
-	par, err := AutoARIMA(series, Bounds{MaxP: 2, MaxD: 1, MaxQ: 2}, WithMLE(), WithParallel())
+	par, err := AutoARIMA(series, Bounds{MaxP: 2, MaxD: 1, MaxQ: 2}, WithMethod(MLE), WithParallel())
 	require.NoError(t, err)
 	sameModel(t, serial, par)
 }

@@ -208,7 +208,7 @@ func TestFitWithCSSRefinementLowersResidualVariance(t *testing.T) {
 
 	refined, err := NewARIMA(Order{P: 1, D: 0, Q: 1})
 	require.NoError(t, err)
-	require.NoError(t, refined.Fit(series, WithCSSRefinement()))
+	require.NoError(t, refined.Fit(series, WithMethod(CSS)))
 
 	assert.LessOrEqual(t, refined.Sigma2(), plain.Sigma2())
 }
@@ -219,7 +219,7 @@ func TestFitWithCSSRefinementRandomWalkNoop(t *testing.T) {
 	series := []float64{1, 3, 2, 5, 4, 7, 6, 9, 8, 11}
 	model, err := NewARIMA(Order{P: 0, D: 1, Q: 0})
 	require.NoError(t, err)
-	require.NoError(t, model.Fit(series, WithCSSRefinement()))
+	require.NoError(t, model.Fit(series, WithMethod(CSS)))
 	assert.Empty(t, model.Phi())
 	assert.Empty(t, model.Theta())
 }
@@ -235,7 +235,7 @@ func TestFitWithMLEChangesCoefficients(t *testing.T) {
 
 	mle, err := NewARIMA(Order{P: 1, D: 0, Q: 1})
 	require.NoError(t, err)
-	require.NoError(t, mle.Fit(series, WithMLE()))
+	require.NoError(t, mle.Fit(series, WithMethod(MLE)))
 
 	assert.NotEqual(t, plain.Phi()[0], mle.Phi()[0])
 	assert.True(t, isStationary(mle.Phi()))
@@ -247,7 +247,7 @@ func TestFitWithMLEFiniteForecast(t *testing.T) {
 	series := genARMA11(1000, 0.6, 0.3, 21)
 	model, err := NewARIMA(Order{P: 1, D: 0, Q: 1})
 	require.NoError(t, err)
-	require.NoError(t, model.Fit(series, WithMLE()))
+	require.NoError(t, model.Fit(series, WithMethod(MLE)))
 
 	forecast, err := model.Forecast(5)
 	require.NoError(t, err)
@@ -256,18 +256,18 @@ func TestFitWithMLEFiniteForecast(t *testing.T) {
 	}
 }
 
-func TestFitWithMLETakesPrecedenceOverCSS(t *testing.T) {
-	// When both options are supplied, MLE wins (matching modern statsmodels'
-	// statespace default), so the fit equals an MLE-only fit.
+func TestFitLastMethodWins(t *testing.T) {
+	// Options apply in order, so a later WithMethod overrides an earlier one:
+	// WithMethod(CSS) then WithMethod(MLE) equals an MLE-only fit.
 	series := genARMA11(2000, 0.5, 0.4, 11)
 
 	both, err := NewARIMA(Order{P: 1, D: 0, Q: 1})
 	require.NoError(t, err)
-	require.NoError(t, both.Fit(series, WithCSSRefinement(), WithMLE()))
+	require.NoError(t, both.Fit(series, WithMethod(CSS), WithMethod(MLE)))
 
 	mleOnly, err := NewARIMA(Order{P: 1, D: 0, Q: 1})
 	require.NoError(t, err)
-	require.NoError(t, mleOnly.Fit(series, WithMLE()))
+	require.NoError(t, mleOnly.Fit(series, WithMethod(MLE)))
 
 	assert.Equal(t, mleOnly.Phi(), both.Phi())
 	assert.Equal(t, mleOnly.Theta(), both.Theta())
@@ -279,7 +279,7 @@ func TestFitWithMLERandomWalkNoop(t *testing.T) {
 	series := []float64{1, 3, 2, 5, 4, 7, 6, 9, 8, 11}
 	model, err := NewARIMA(Order{P: 0, D: 1, Q: 0})
 	require.NoError(t, err)
-	require.NoError(t, model.Fit(series, WithMLE()))
+	require.NoError(t, model.Fit(series, WithMethod(MLE)))
 	assert.Empty(t, model.Phi())
 	assert.Empty(t, model.Theta())
 }

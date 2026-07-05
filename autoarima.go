@@ -36,12 +36,12 @@ type SeasonalBounds struct {
 // skipped.
 //
 // The criterion defaults to AIC and can be changed with WithCriterion (AIC,
-// BIC, or AICc). Any FitOption (e.g. WithCSSRefinement, WithMLE) is threaded
-// through to every candidate fit and the final refit, so candidates are scored
-// and the final model is fit with the same options.
+// BIC, or AICc). Any FitOption (e.g. WithMethod) is threaded through to every
+// candidate fit and the final refit, so candidates are scored and the final
+// model is fit with the same options.
 //
 // Note that the criterion is always computed from the residual variance (see
-// score), even when WithMLE is supplied: the refinement lowers each candidate's
+// score), even when WithMethod(MLE) is supplied: the refinement lowers each candidate's
 // residual variance and thus influences selection, but the score is not the
 // exact Gaussian-likelihood criterion. A likelihood-based criterion is left to
 // a later phase.
@@ -127,8 +127,8 @@ func AutoARIMA(series []float64, max Bounds, opts ...FitOption) (*ARIMA, error) 
 // WithParallel honored).
 //
 // The criterion defaults to AIC (WithCriterion to change it). Any FitOption
-// (WithCSSRefinement, WithMLE) is threaded through to every candidate fit and
-// the final refit, exactly as in AutoARIMA.
+// (e.g. WithMethod) is threaded through to every candidate fit and the final
+// refit, exactly as in AutoARIMA.
 func AutoSARIMA(series []float64, max Bounds, seasonal SeasonalBounds, opts ...FitOption) (*ARIMA, error) {
 	maxP, maxD, maxQ := max.MaxP, max.MaxD, max.MaxQ
 	maxBigP, maxBigQ, m := seasonal.MaxP, seasonal.MaxQ, seasonal.Period

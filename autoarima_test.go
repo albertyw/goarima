@@ -113,7 +113,7 @@ func TestAutoARIMAWithCSSRefinement(t *testing.T) {
 	// AutoARIMA must accept and thread the refinement option through to its
 	// fits, still returning a usable, finite-forecasting model.
 	series := genARMA11(500, 0.5, 0.4, 2)
-	model, err := AutoARIMA(series, Bounds{MaxP: 3, MaxD: 1, MaxQ: 3}, WithCSSRefinement())
+	model, err := AutoARIMA(series, Bounds{MaxP: 3, MaxD: 1, MaxQ: 3}, WithMethod(CSS))
 	require.NoError(t, err)
 	require.NotNil(t, model)
 
@@ -128,7 +128,7 @@ func TestAutoARIMAWithMLE(t *testing.T) {
 	// AutoARIMA must accept and thread the MLE option through to its fits, still
 	// returning a usable, finite-forecasting model.
 	series := genARMA11(500, 0.5, 0.4, 2)
-	model, err := AutoARIMA(series, Bounds{MaxP: 3, MaxD: 1, MaxQ: 3}, WithMLE())
+	model, err := AutoARIMA(series, Bounds{MaxP: 3, MaxD: 1, MaxQ: 3}, WithMethod(MLE))
 	require.NoError(t, err)
 	require.NotNil(t, model)
 

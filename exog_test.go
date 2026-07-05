@@ -222,7 +222,7 @@ func TestExogCSSRefinement(t *testing.T) {
 		X[i] = []float64{x[i]}
 	}
 	m, _ := NewARIMA(Order{P: 1, D: 0, Q: 1})
-	if err := m.Fit(y, WithExog(X), WithCSSRefinement()); err != nil {
+	if err := m.Fit(y, WithExog(X), WithMethod(CSS)); err != nil {
 		t.Fatal(err)
 	}
 	if b := m.Beta(); len(b) != 1 || math.Abs(b[0]-2.5) > 0.3 {
@@ -282,7 +282,7 @@ func TestSeasonalFitWithExogIsFinite(t *testing.T) {
 
 	// The joint refinement must also handle seasonal factors + β together.
 	mleModel, _ := NewSARIMA(Order{P: 1, D: 0, Q: 0}, SeasonalOrder{P: 1, D: 0, Q: 0, Period: m})
-	if err := mleModel.Fit(y, WithExog(X), WithMLE()); err != nil {
+	if err := mleModel.Fit(y, WithExog(X), WithMethod(MLE)); err != nil {
 		t.Fatal(err)
 	}
 	fm, err := mleModel.ForecastExog(m, futureX)
@@ -328,7 +328,7 @@ func TestExogMLEImprovesOrMatches(t *testing.T) {
 		t.Fatal(err)
 	}
 	mle, _ := NewARIMA(Order{P: 1, D: 0, Q: 1})
-	if err := mle.Fit(y, WithExog(X), WithMLE()); err != nil {
+	if err := mle.Fit(y, WithExog(X), WithMethod(MLE)); err != nil {
 		t.Fatal(err)
 	}
 	// β stays sensible and finite under joint refinement.

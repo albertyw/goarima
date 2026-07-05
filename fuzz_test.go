@@ -203,7 +203,7 @@ func FuzzExog(f *testing.F) {
 }
 
 // FuzzFitRefine drives the optimizer and root-repair refinement paths
-// (WithCSSRefinement/WithMLE/WithRootRepair) on a fuzzed series, asserting the
+// (WithMethod(CSS)/WithMethod(MLE)/WithRootRepair) on a fuzzed series, asserting the
 // gonum Nelder-Mead search and root reflection never panic and still yield
 // finite, correctly-sized forecasts.
 func FuzzFitRefine(f *testing.F) {
@@ -228,13 +228,13 @@ func FuzzFitRefine(f *testing.F) {
 		var opts []FitOption
 		switch boundOrder(opt, 3) {
 		case 0:
-			opts = []FitOption{WithCSSRefinement()}
+			opts = []FitOption{WithMethod(CSS)}
 		case 1:
-			opts = []FitOption{WithMLE()}
+			opts = []FitOption{WithMethod(MLE)}
 		case 2:
 			opts = []FitOption{WithRootRepair()}
 		case 3:
-			opts = []FitOption{WithMLE(), WithRootRepair()}
+			opts = []FitOption{WithMethod(MLE), WithRootRepair()}
 		}
 		if err := model.Fit(series, opts...); err != nil {
 			return

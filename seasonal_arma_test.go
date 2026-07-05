@@ -123,7 +123,7 @@ func TestFitSeasonalARWithMLERecoversCoefficient(t *testing.T) {
 	}
 	model, err := NewSARIMA(Order{P: 0, D: 0, Q: 0}, SeasonalOrder{P: 1, D: 0, Q: 0, Period: m})
 	assert.NoError(t, err)
-	assert.NoError(t, model.Fit(x, WithMLE()))
+	assert.NoError(t, model.Fit(x, WithMethod(MLE)))
 	assert.InDelta(t, 0.7, model.SeasonalPhi()[0], 0.07)
 }
 
@@ -200,7 +200,7 @@ func TestFitRecoversSeasonalMA(t *testing.T) {
 	}
 	model, err := NewSARIMA(Order{P: 0, D: 0, Q: 0}, SeasonalOrder{P: 0, D: 0, Q: 1, Period: m})
 	assert.NoError(t, err)
-	assert.NoError(t, model.Fit(x, WithMLE()))
+	assert.NoError(t, model.Fit(x, WithMethod(MLE)))
 	assert.InDelta(t, 0.5, model.SeasonalTheta()[0], 0.12)
 }
 

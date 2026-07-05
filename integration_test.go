@@ -219,7 +219,7 @@ func TestFixedOrdersMatchPmdarima(t *testing.T) {
 
 			model, err := goarima.NewARIMA(goarima.Order{P: p, D: d, Q: q})
 			require.NoError(t, err)
-			require.NoError(t, model.Fit(s, goarima.WithMLE()))
+			require.NoError(t, model.Fit(s, goarima.WithMethod(goarima.MLE)))
 
 			if p == 0 || q == 0 {
 				assertCoeffsClose(t, "phi", fix.Phi, model.Phi(), fixedCoeffTol)
@@ -435,7 +435,7 @@ func TestSeasonalFixedOrderMatchesPmdarima(t *testing.T) {
 
 			model, err := goarima.NewSARIMA(goarima.Order{P: p, D: d, Q: q}, goarima.SeasonalOrder{P: bigP, D: bigD, Q: bigQ, Period: m})
 			require.NoError(t, err)
-			require.NoError(t, model.Fit(series[name], goarima.WithMLE()))
+			require.NoError(t, model.Fit(series[name], goarima.WithMethod(goarima.MLE)))
 
 			if q == 0 && p > 0 {
 				assertCoeffsClose(t, "phi", fix.Phi, model.Phi(), 0.05)
@@ -465,7 +465,7 @@ func TestSeasonalARMAMatchesStatsmodels(t *testing.T) {
 
 			model, err := goarima.NewSARIMA(goarima.Order{P: p, D: d, Q: q}, goarima.SeasonalOrder{P: P, D: D, Q: Q, Period: m})
 			require.NoError(t, err)
-			require.NoError(t, model.Fit(series[name], goarima.WithMLE()))
+			require.NoError(t, model.Fit(series[name], goarima.WithMethod(goarima.MLE)))
 
 			if p == 0 && P == 0 { // pure MA: MA factors are identifiable
 				assertCoeffsClose(t, "theta", fix.Theta, model.Theta(), 0.05)
@@ -494,7 +494,7 @@ func TestForecastIntervalMatchesStatsmodels(t *testing.T) {
 			p, d, q := fix.Order[0], fix.Order[1], fix.Order[2]
 			model, err := goarima.NewARIMA(goarima.Order{P: p, D: d, Q: q})
 			require.NoError(t, err)
-			require.NoError(t, model.Fit(series[name], goarima.WithMLE()))
+			require.NoError(t, model.Fit(series[name], goarima.WithMethod(goarima.MLE)))
 
 			fc, err := model.ForecastInterval(fix.Horizon, 1-fix.Alpha)
 			require.NoError(t, err)
@@ -519,7 +519,7 @@ func TestExogMatchesStatsmodels(t *testing.T) {
 	e := ref.Exog
 	model, err := goarima.NewARIMA(goarima.Order{P: e.Order[0], D: e.Order[1], Q: e.Order[2]})
 	require.NoError(t, err)
-	require.NoError(t, model.Fit(e.Y, goarima.WithExog(e.X), goarima.WithMLE()))
+	require.NoError(t, model.Fit(e.Y, goarima.WithExog(e.X), goarima.WithMethod(goarima.MLE)))
 
 	assertCoeffsClose(t, "beta", e.Beta, model.Beta(), 0.05)
 	assertCoeffsClose(t, "phi", e.Phi, model.Phi(), 0.05)
@@ -605,7 +605,7 @@ func fitGoldenWithMLE(t *testing.T, s []float64, order []int, horizon int) (*goa
 	t.Helper()
 	model, err := goarima.NewARIMA(goarima.Order{P: order[0], D: order[1], Q: order[2]})
 	require.NoError(t, err)
-	require.NoError(t, model.Fit(s, goarima.WithMLE()))
+	require.NoError(t, model.Fit(s, goarima.WithMethod(goarima.MLE)))
 	forecast, err := model.Forecast(horizon)
 	require.NoError(t, err)
 	return model, forecast
