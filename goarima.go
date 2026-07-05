@@ -291,6 +291,20 @@ func WithContext(ctx context.Context) AutoOption {
 	return autoOptionFunc(func(c *fitConfig) { c.ctx = ctx })
 }
 
+// Fit estimates the model's coefficients from series. It differences the series
+// (seasonally then regularly) per the configured orders, centers it, and fits the
+// (multiplicative seasonal) ARMA factors by Hannan-Rissanen; WithMethod(CSS) or
+// WithMethod(MLE) then refines that seed. WithExog fits regression with ARIMA
+// errors, and WithRootRepair reflects an unstable estimate back into the
+// stationary/invertible region instead of erroring. After a successful Fit the
+// coefficients and forecast state are available via the accessors, and Forecast /
+// ForecastInterval may be called.
+//
+// Fit returns an error if series is too short for the requested orders, contains a
+// NaN or ±Inf, or the ARMA estimation fails (e.g. a non-stationary/non-invertible
+// fit without WithRootRepair). The search-only options (WithCriterion,
+// WithStepwise, WithParallel, WithContext) are AutoOptions and cannot be passed
+// to Fit — that is a compile-time error.
 func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
 	var cfg fitConfig
 	for _, opt := range opts {
