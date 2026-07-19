@@ -435,6 +435,20 @@ default `conf_int`.
 `WithExog` works with `NewSARIMA` and threads through `AutoARIMA`/`AutoSARIMA`,
 which net `X` out before choosing the differencing orders.
 
+### Parameter standard errors
+
+A point estimate alone doesn't say whether a coefficient is distinguishable from
+zero. Under `WithMethod(MLE)`, the curvature of the log-likelihood at the optimum
+does: the *observed information* is the Hessian of the negative log-likelihood,
+and its inverse is the asymptotic covariance of the estimates. goarima computes
+that Hessian numerically (finite differences of the same concentrated NLL the
+Kalman filter evaluates) and inverts it, so `StdErrors()` gives one standard error
+per coefficient and `Summary()` adds z-statistics, p-values, and confidence
+intervals alongside the log-likelihood, AIC, and BIC — the goarima analogue of
+statsmodels' `.summary()`. Standard errors come from the likelihood curvature, so
+they require the exact-MLE fit; a Hannan-Rissanen or CSS fit has no such curvature
+to report and returns an error.
+
 ---
 
 ## 8. What this implementation is *not*

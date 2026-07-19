@@ -29,6 +29,11 @@ type ARIMA struct {
 	beta             []float64   // regression coefficients β (length k); nil when no exog
 	exogDim          int         // k — number of exogenous regressors (0 when no exog)
 	fitted           bool        // whether Fit has populated the coefficients/state
+	paramCov         [][]float64 // MLE coefficient covariance (excl. σ²); nil if singular or not MLE-fit
+	paramNames       []string    // canonical coefficient names (excl. σ²)
+	logLik           float64     // exact Gaussian log-likelihood at the fit
+	nobs             int         // effective sample size used in the likelihood
+	mleFit           bool        // whether the fit used WithMethod(MLE); gates StdErrors/Summary
 }
 
 // Order holds the non-seasonal ARIMA orders (p, d, q): the AR order, the
@@ -431,6 +436,26 @@ func (m *ARIMA) Fit(series []float64, opts ...FitOption) error {
 	m.expandedPhi = expandSeasonalAR(phi, sphi, m.period)
 	m.expandedTheta = expandSeasonalMA(theta, stheta, m.period)
 	m.sigma2 = meanSquare(residuals)
+
+	// Parameter covariance (MLE only): the observed information is ½·Hessian of
+	// the concentrated NLL, so cov = 2·H⁻¹. Computed here while z/η are in scope.
+	m.mleFit = false
+	m.paramCov = nil
+	if cfg.method == MLE {
+		m.mleFit = true
+		coef := packCoef(m.beta, phi, sphi, theta, stheta)
+		var objective func([]float64) float64
+		if cfg.exog != nil {
+			objective = exogNLLObjective(series, cfg.exog, len(m.beta), m.p, m.bigP, m.q, m.d, m.bigD, m.period)
+		} else {
+			objective = armaNLLObjective(z, m.p, m.bigP, m.q, m.period)
+		}
+		m.paramCov = paramCovariance(objective, coef)
+		m.paramNames = paramNames(m.exogDim, m.p, m.bigP, m.q, m.bigQ, m.period)
+		m.nobs = len(z)
+		nll := kalmanConcentratedNLL(z, m.expandedPhi, m.expandedTheta)
+		m.logLik = -0.5 * (nll + float64(len(z))*(math.Log(2*math.Pi)+1))
+	}
 
 	// 4. store the last centered observations and residuals the forecast recursion
 	//    needs: one per coefficient of the expanded AR/MA polynomials.

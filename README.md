@@ -163,6 +163,24 @@ err := model.Fit(series, goarima.WithMethod(goarima.MLE))
 model, err := goarima.AutoARIMA(series, goarima.Bounds{MaxP: 5, MaxD: 2, MaxQ: 5}, goarima.WithMethod(goarima.MLE))
 ```
 
+### Parameter uncertainty (standard errors & `Summary`)
+
+After an MLE fit, `StdErrors()` returns the standard error of each coefficient
+(`β`, `φ`, `Φₛ`, `θ`, `Θₛ`, in that order) and `Summary()` returns those with
+z-statistics, p-values, 95% confidence intervals, and model fit statistics
+(log-likelihood, AIC, BIC). The covariance is the inverse observed information
+(the numeric Hessian of the exact Gaussian log-likelihood), matching
+statsmodels' `.summary()` / `.bse` under `cov_type="approx"`. Both require
+`WithMethod(goarima.MLE)` — standard errors come from the likelihood curvature,
+so a Hannan-Rissanen (default) or CSS fit returns an error.
+
+```go
+err := model.Fit(series, goarima.WithMethod(goarima.MLE))
+se, err := model.StdErrors() // one standard error per coefficient
+summary, err := model.Summary()
+fmt.Print(summary) // fixed-width table of coef / std err / z / P>|z| / CI
+```
+
 ### Repairing unstable fixed-order fits
 
 By default `Fit` returns an error when the Hannan-Rissanen estimate for an
