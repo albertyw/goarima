@@ -217,9 +217,9 @@ func TestFixedOrdersMatchPmdarima(t *testing.T) {
 			require.NotNilf(t, s, "no series for %s", name)
 			p, d, q := fix.Order[0], fix.Order[1], fix.Order[2]
 
-			model, err := goarima.NewARIMA(p, d, q)
+			model, err := goarima.NewARIMA(goarima.Order{P: p, D: d, Q: q})
 			require.NoError(t, err)
-			require.NoError(t, model.Fit(s, goarima.WithMLE()))
+			require.NoError(t, model.Fit(s, goarima.WithMethod(goarima.MLE)))
 
 			if p == 0 || q == 0 {
 				assertCoeffsClose(t, "phi", fix.Phi, model.Phi(), fixedCoeffTol)
@@ -258,7 +258,7 @@ func absInt(x int) int {
 // exact continuation 11..15 — a closed-form result independent of any library.
 func TestAnalyticRampForecast(t *testing.T) {
 	series := []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
-	model, err := goarima.NewARIMA(1, 1, 1)
+	model, err := goarima.NewARIMA(goarima.Order{P: 1, D: 1, Q: 1})
 	require.NoError(t, err)
 	require.NoError(t, model.Fit(series))
 
@@ -274,7 +274,7 @@ func TestAnalyticRampForecast(t *testing.T) {
 // difference, a pure random-walk-with-drift forecast with a closed form.
 func TestAnalyticRandomWalkDrift(t *testing.T) {
 	series := []float64{1, 3, 2, 5, 4, 7, 6, 9, 8, 11}
-	model, err := goarima.NewARIMA(0, 1, 0)
+	model, err := goarima.NewARIMA(goarima.Order{P: 0, D: 1, Q: 0})
 	require.NoError(t, err)
 	require.NoError(t, model.Fit(series))
 
@@ -290,7 +290,7 @@ func TestAnalyticRandomWalkDrift(t *testing.T) {
 // data (phi≈-0.9, mean 1.5) decays toward the mean in a known damped pattern.
 func TestAnalyticAR1DampedDecay(t *testing.T) {
 	series := []float64{1, 2, 1, 2, 1, 2, 1, 2, 1, 2}
-	model, err := goarima.NewARIMA(1, 0, 0)
+	model, err := goarima.NewARIMA(goarima.Order{P: 1, D: 0, Q: 0})
 	require.NoError(t, err)
 	require.NoError(t, model.Fit(series))
 
@@ -332,10 +332,11 @@ func TestAutoSelectionVsPmdarima(t *testing.T) {
 			require.NotNilf(t, s, "no series for %s", name)
 			maxP, maxD, maxQ := auto.Max[0], auto.Max[1], auto.Max[2]
 
-			model, err := goarima.AutoARIMA(s, maxP, maxD, maxQ)
+			model, err := goarima.AutoARIMA(s, goarima.Bounds{MaxP: maxP, MaxD: maxD, MaxQ: maxQ})
 			require.NoError(t, err)
 
-			p, d, q := model.Orders()
+			o := model.Order()
+			p, d, q := o.P, o.D, o.Q
 			refD := auto.Order[1]
 			assert.LessOrEqualf(t, absInt(d-refD), 1, "d=%d vs pmdarima d=%d", d, refD)
 			assert.GreaterOrEqual(t, p, 0)
@@ -363,10 +364,11 @@ func TestAutoARIMAAirPassengers(t *testing.T) {
 	series := parseTestSeries(t, airPassengersCSV)
 	require.Len(t, series, 144)
 
-	model, err := goarima.AutoARIMA(series, 5, 2, 5)
+	model, err := goarima.AutoARIMA(series, goarima.Bounds{MaxP: 5, MaxD: 2, MaxQ: 5})
 	require.NoError(t, err)
 
-	p, d, q := model.Orders()
+	o := model.Order()
+	p, d, q := o.P, o.D, o.Q
 	assert.GreaterOrEqual(t, d, 1) // strong trend -> at least one difference
 	assert.LessOrEqual(t, p, 5)
 	assert.LessOrEqual(t, q, 5)
@@ -386,7 +388,7 @@ func TestAutoARIMAAirPassengers(t *testing.T) {
 // previously made Forecast diverge to ~1e35. Fit must now reject it.
 func TestNonInvertibleAirPassengersRejected(t *testing.T) {
 	series := parseTestSeries(t, airPassengersCSV)
-	model, err := goarima.NewARIMA(2, 1, 1)
+	model, err := goarima.NewARIMA(goarima.Order{P: 2, D: 1, Q: 1})
 	require.NoError(t, err)
 	assert.Error(t, model.Fit(series))
 }
@@ -397,11 +399,10 @@ func TestNonInvertibleAirPassengersRejected(t *testing.T) {
 // test, d stays at 0 or 1 and the forecast is finite.
 func TestAutoARIMASunspotsNotOverDifferenced(t *testing.T) {
 	series := parseTestSeries(t, sunspotsCSV)
-	model, err := goarima.AutoARIMA(series, 5, 2, 5)
+	model, err := goarima.AutoARIMA(series, goarima.Bounds{MaxP: 5, MaxD: 2, MaxQ: 5})
 	require.NoError(t, err)
 
-	_, d, _ := model.Orders()
-	assert.LessOrEqual(t, d, 1) // must not over-difference to d=2
+	assert.LessOrEqual(t, model.Order().D, 1) // must not over-difference to d=2
 
 	forecast, err := model.Forecast(10)
 	require.NoError(t, err)
@@ -432,9 +433,9 @@ func TestSeasonalFixedOrderMatchesPmdarima(t *testing.T) {
 			require.Equal(t, 0, bigP, "fixture has no seasonal AR (14a)")
 			require.Equal(t, 0, bigQ, "fixture has no seasonal MA (14a)")
 
-			model, err := goarima.NewSARIMA(p, d, q, bigP, bigD, bigQ, m)
+			model, err := goarima.NewSARIMA(goarima.Order{P: p, D: d, Q: q}, goarima.SeasonalOrder{P: bigP, D: bigD, Q: bigQ, Period: m})
 			require.NoError(t, err)
-			require.NoError(t, model.Fit(series[name], goarima.WithMLE()))
+			require.NoError(t, model.Fit(series[name], goarima.WithMethod(goarima.MLE)))
 
 			if q == 0 && p > 0 {
 				assertCoeffsClose(t, "phi", fix.Phi, model.Phi(), 0.05)
@@ -462,9 +463,9 @@ func TestSeasonalARMAMatchesStatsmodels(t *testing.T) {
 			p, d, q := fix.Order[0], fix.Order[1], fix.Order[2]
 			P, D, Q, m := fix.SeasonalOrder[0], fix.SeasonalOrder[1], fix.SeasonalOrder[2], fix.SeasonalOrder[3]
 
-			model, err := goarima.NewSARIMA(p, d, q, P, D, Q, m)
+			model, err := goarima.NewSARIMA(goarima.Order{P: p, D: d, Q: q}, goarima.SeasonalOrder{P: P, D: D, Q: Q, Period: m})
 			require.NoError(t, err)
-			require.NoError(t, model.Fit(series[name], goarima.WithMLE()))
+			require.NoError(t, model.Fit(series[name], goarima.WithMethod(goarima.MLE)))
 
 			if p == 0 && P == 0 { // pure MA: MA factors are identifiable
 				assertCoeffsClose(t, "theta", fix.Theta, model.Theta(), 0.05)
@@ -491,9 +492,9 @@ func TestForecastIntervalMatchesStatsmodels(t *testing.T) {
 	for name, fix := range ref.Interval {
 		t.Run(name, func(t *testing.T) {
 			p, d, q := fix.Order[0], fix.Order[1], fix.Order[2]
-			model, err := goarima.NewARIMA(p, d, q)
+			model, err := goarima.NewARIMA(goarima.Order{P: p, D: d, Q: q})
 			require.NoError(t, err)
-			require.NoError(t, model.Fit(series[name], goarima.WithMLE()))
+			require.NoError(t, model.Fit(series[name], goarima.WithMethod(goarima.MLE)))
 
 			fc, err := model.ForecastInterval(fix.Horizon, 1-fix.Alpha)
 			require.NoError(t, err)
@@ -516,18 +517,18 @@ func TestForecastIntervalMatchesStatsmodels(t *testing.T) {
 func TestExogMatchesStatsmodels(t *testing.T) {
 	ref := loadReference(t)
 	e := ref.Exog
-	model, err := goarima.NewARIMA(e.Order[0], e.Order[1], e.Order[2])
+	model, err := goarima.NewARIMA(goarima.Order{P: e.Order[0], D: e.Order[1], Q: e.Order[2]})
 	require.NoError(t, err)
-	require.NoError(t, model.Fit(e.Y, goarima.WithExog(e.X), goarima.WithMLE()))
+	require.NoError(t, model.Fit(e.Y, goarima.WithExog(e.X), goarima.WithMethod(goarima.MLE)))
 
 	assertCoeffsClose(t, "beta", e.Beta, model.Beta(), 0.05)
 	assertCoeffsClose(t, "phi", e.Phi, model.Phi(), 0.05)
 
-	fc, err := model.ForecastExog(e.Horizon, e.FutureX)
+	fc, err := model.Forecast(e.Horizon, goarima.WithFutureExog(e.FutureX))
 	require.NoError(t, err)
 	assertForecastClose(t, e.Forecast, fc, 0.05)
 
-	iv, err := model.ForecastIntervalExog(e.Horizon, 1-e.Alpha, e.FutureX)
+	iv, err := model.ForecastInterval(e.Horizon, 1-e.Alpha, goarima.WithFutureExog(e.FutureX))
 	require.NoError(t, err)
 	for k := range iv.Point {
 		assert.Less(t, iv.Lower[k], iv.Upper[k], "step %d ordered", k+1)
@@ -582,7 +583,7 @@ var autoSeasonalCases = []struct {
 // fitGoldenAutoSeasonal runs AutoSARIMA and returns the fitted model + forecast.
 func fitGoldenAutoSeasonal(t *testing.T, s []float64, maxP, maxD, maxQ, maxBigP, maxBigQ, period, horizon int) (*goarima.ARIMA, []float64) {
 	t.Helper()
-	model, err := goarima.AutoSARIMA(s, maxP, maxD, maxQ, maxBigP, maxBigQ, period)
+	model, err := goarima.AutoSARIMA(s, goarima.Bounds{MaxP: maxP, MaxD: maxD, MaxQ: maxQ}, goarima.SeasonalBounds{MaxP: maxBigP, MaxQ: maxBigQ, Period: period})
 	require.NoError(t, err)
 	forecast, err := model.Forecast(horizon)
 	require.NoError(t, err)
@@ -602,9 +603,9 @@ const (
 // fitGoldenWithMLE fits a model with exact MLE and returns it with its forecast.
 func fitGoldenWithMLE(t *testing.T, s []float64, order []int, horizon int) (*goarima.ARIMA, []float64) {
 	t.Helper()
-	model, err := goarima.NewARIMA(order[0], order[1], order[2])
+	model, err := goarima.NewARIMA(goarima.Order{P: order[0], D: order[1], Q: order[2]})
 	require.NoError(t, err)
-	require.NoError(t, model.Fit(s, goarima.WithMLE()))
+	require.NoError(t, model.Fit(s, goarima.WithMethod(goarima.MLE)))
 	forecast, err := model.Forecast(horizon)
 	require.NoError(t, err)
 	return model, forecast
@@ -664,8 +665,10 @@ func TestGoldenAutoSeasonalSelection(t *testing.T) {
 			require.Truef(t, ok, "no auto-seasonal golden for %s (run TestGoldenWithMLE -update)", c.Name)
 
 			model, forecast := fitGoldenAutoSeasonal(t, series[c.Name], c.MaxP, c.MaxD, c.MaxQ, c.MaxBigP, c.MaxBigQ, c.Period, c.Horizon)
-			p, d, q := model.Orders()
-			bigP, bigD, bigQ, m := model.SeasonalOrders()
+			o := model.Order()
+			p, d, q := o.P, o.D, o.Q
+			so := model.SeasonalOrder()
+			bigP, bigD, bigQ, m := so.P, so.D, so.Q, so.Period
 			assert.Equal(t, want.Order, []int{p, d, q}, "selected order")
 			assert.Equal(t, want.SeasonalOrder, []int{bigP, bigD, bigQ, m}, "selected seasonal order")
 			assertCoeffsClose(t, "phi", want.Phi, model.Phi(), goldenCoeffTol)
@@ -700,8 +703,10 @@ func writeGolden(t *testing.T, ref refFixture, series map[string][]float64) {
 	autoSeasonal := make(map[string]goldenAutoSeasonalFit, len(autoSeasonalCases))
 	for _, c := range autoSeasonalCases {
 		model, forecast := fitGoldenAutoSeasonal(t, series[c.Name], c.MaxP, c.MaxD, c.MaxQ, c.MaxBigP, c.MaxBigQ, c.Period, c.Horizon)
-		p, d, q := model.Orders()
-		bigP, bigD, bigQ, m := model.SeasonalOrders()
+		o := model.Order()
+		p, d, q := o.P, o.D, o.Q
+		so := model.SeasonalOrder()
+		bigP, bigD, bigQ, m := so.P, so.D, so.Q, so.Period
 		autoSeasonal[c.Name] = goldenAutoSeasonalFit{
 			Max:           []int{c.MaxP, c.MaxD, c.MaxQ},
 			Period:        c.Period,

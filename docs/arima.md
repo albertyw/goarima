@@ -187,14 +187,14 @@ steps. Both treat the Hannan-Rissanen result as a starting guess and adjust
 `φ`/`θ` with the same derivative-free Nelder-Mead search (the shared
 `refineCoefficients` helper), differing only in the objective.
 
-**CSS** (`Fit(series, WithCSSRefinement())`, in `refine.go`) minimizes the
+**CSS** (`Fit(series, WithMethod(CSS))`, in `refine.go`) minimizes the
 **conditional sum of squares** — the sum of the squared one-step residuals:
 
 ```
 minimize_{φ, θ}  Σ_t e_t²   where  e_t = z_t − Σ φ_i·z_{t-i} − Σ θ_j·e_{t-j}
 ```
 
-**Exact MLE** (`Fit(series, WithMLE())`, in `mle.go`) minimizes the exact
+**Exact MLE** (`Fit(series, WithMethod(MLE))`, in `mle.go`) minimizes the exact
 Gaussian negative log-likelihood. It writes the ARMA model in state-space
 (companion) form, initializes the state covariance from its stationary
 distribution (the discrete **Lyapunov equation** `P = T·P·Tᵀ + R·Rᵀ`), and runs a
@@ -215,7 +215,8 @@ stationary/invertible region (Section 7) are rejected during the search, and the
 refined estimate is kept only if it strictly improves on the seed — otherwise the
 Hannan-Rissanen seed is used unchanged. Refinement therefore never produces a
 worse fit than the Hannan-Rissanen seed (Nelder-Mead finds a local optimum, not
-necessarily the global one). If both options are passed, MLE takes precedence.
+necessarily the global one). `WithMethod` selects at most one refinement, so there
+is no precedence to resolve.
 
 The unconstrained Hannan-Rissanen seed itself can land outside that region; by
 default `Fit` then errors. `WithRootRepair()` instead **reflects** each offending
@@ -282,8 +283,8 @@ the structure, and choosing the confidence level.
 
 ## 6. Choosing the orders automatically (AutoARIMA)
 
-`AutoARIMA(series, maxP, maxD, maxQ)` (in `autoarima.go`) picks `p`, `d`, `q`
-for you, in two stages.
+`AutoARIMA(series, Bounds{MaxP, MaxD, MaxQ})` (in `autoarima.go`) picks `p`, `d`,
+`q` for you, in two stages.
 
 ### Choosing d (KPSS stationarity test)
 
@@ -331,7 +332,7 @@ best strictly-better one, and repeat until none improves. It fits far fewer mode
 can settle on a local rather than the global optimum. `WithParallel()` fits the
 candidates of each step concurrently; the result is identical to the serial
 search, so it only changes wall-clock time (and only helps when each fit is
-expensive, e.g. under `WithMLE`). A long search can be cancelled by passing
+expensive, e.g. under `WithMethod(MLE)`). A long search can be cancelled by passing
 `WithContext(ctx)`: the search stops between candidate fits when the context is
 cancelled and returns an error wrapping the cause.
 
@@ -370,13 +371,13 @@ goarima expands these products into ordinary (long) AR/MA polynomials — e.g.
 `m+1` — so the same estimation, state-space, and forecasting machinery handles
 them with no special cases (`expandSeasonalAR`/`expandSeasonalMA` in
 `seasonal_arma.go`). The seasonal factors are seeded by a Hannan-Rissanen
-regression extended with seasonal lags and then, under `WithMLE`, refined to the
-exact multiplicative likelihood — so `Φₛ`/`Θₛ` match statsmodels SARIMAX.
+regression extended with seasonal lags and then, under `WithMethod(MLE)`, refined
+to the exact multiplicative likelihood — so `Φₛ`/`Θₛ` match statsmodels SARIMAX.
 
-`NewSARIMA(p, d, q, P, D, Q, m)` fits an explicit seasonal model; `SeasonalPhi()`
-and `SeasonalTheta()` return the fitted seasonal factors.
-`AutoSARIMA(series, maxP, maxD, maxQ, maxBigP, maxBigQ, m)` chooses `D`
-automatically with the **Wang-Smith-Hyndman seasonal-strength measure**
+`NewSARIMA(Order{P,D,Q}, SeasonalOrder{P,D,Q,Period})` fits an explicit seasonal
+model; `SeasonalPhi()` and `SeasonalTheta()` return the fitted seasonal factors.
+`AutoSARIMA(series, Bounds{MaxP,MaxD,MaxQ}, SeasonalBounds{MaxP,MaxQ,Period})`
+chooses `D` automatically with the **Wang-Smith-Hyndman seasonal-strength measure**
 
 ```
 Fs = max(0, 1 − Var(remainder) / Var(detrended))   ∈ [0, 1],
@@ -415,21 +416,22 @@ contemporaneously, not as extra lagged terms).
 goarima estimates it in two steps: difference `y` and each column of `X` by the
 model's orders, fit `β` by ordinary least squares on the differenced data, then run
 the whole ARIMA pipeline on the level-scale residual series `η = y − Xβ`. Under
-`WithMLE` / `WithCSSRefinement`, `β` is *not* left at its OLS seed — it joins the
-ARMA coefficients in the Nelder-Mead parameter vector and is re-estimated jointly
-(each trial re-forms `η` from the current `β`), matching SARIMAX's joint fit.
+`WithMethod(MLE)` / `WithMethod(CSS)`, `β` is *not* left at its OLS seed — it joins
+the ARMA coefficients in the Nelder-Mead parameter vector and is re-estimated
+jointly (each trial re-forms `η` from the current `β`), matching SARIMAX's joint fit.
 
 ```go
-model, _ := goarima.NewARIMA(1, 0, 0)
-model.Fit(series, goarima.WithExog(X), goarima.WithMLE()) // X is n×k
-beta := model.Beta()                                       // estimated β
-forecast, _ := model.ForecastExog(h, futureX)              // futureX is h×k
+model, _ := goarima.NewARIMA(goarima.Order{P: 1, D: 0, Q: 0})
+model.Fit(series, goarima.WithExog(X), goarima.WithMethod(goarima.MLE)) // X is n×k
+beta := model.Beta()                                                    // estimated β
+forecast, _ := model.Forecast(h, goarima.WithFutureExog(futureX))       // futureX is h×k
 ```
 
 A forecast then adds the regression mean of the *supplied future* regressors back
 onto the ARIMA forecast of `η`, so the prediction responds to known future inputs.
-`ForecastIntervalExog` shifts the `σ²·Σψ²` band (§5) by that same mean; the band
-excludes the uncertainty in `β` itself, matching statsmodels' default `conf_int`.
+`ForecastInterval` (with `WithFutureExog`) shifts the `σ²·Σψ²` band (§5) by that
+same mean; the band excludes the uncertainty in `β` itself, matching statsmodels'
+default `conf_int`.
 `WithExog` works with `NewSARIMA` and threads through `AutoARIMA`/`AutoSARIMA`,
 which net `X` out before choosing the differencing orders.
 
@@ -441,8 +443,8 @@ goarima aims to be a clear, dependency-light, pure-Go ARIMA. It deliberately
 leaves out things a production statistics package would include:
 
 - **Approximate by default.** Hannan-Rissanen is approximate and the optional CSS
-  refinement is least-squares. The optional `WithMLE` refinement adds the exact
-  Gaussian (Kalman-filter) likelihood, but small numeric differences from
+  refinement is least-squares. The optional `WithMethod(MLE)` refinement adds the
+  exact Gaussian (Kalman-filter) likelihood, but small numeric differences from
   statsmodels/pmdarima remain.
 - **Unstable fits are rejected by default, repaired on request.** If an explicit
   `(p,d,q)` lands outside the stationary/invertible region, `Fit` returns an error

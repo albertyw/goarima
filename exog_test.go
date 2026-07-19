@@ -73,7 +73,7 @@ func TestFitWithExogRecoversBeta(t *testing.T) {
 	for i := range X {
 		X[i] = []float64{x[i]}
 	}
-	m, err := NewARIMA(1, 0, 0)
+	m, err := NewARIMA(Order{P: 1, D: 0, Q: 0})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestFitWithExogRecoversBeta(t *testing.T) {
 }
 
 func TestFitWithoutExogLeavesBetaEmpty(t *testing.T) {
-	m, _ := NewARIMA(1, 0, 0)
+	m, _ := NewARIMA(Order{P: 1, D: 0, Q: 0})
 	if err := m.Fit([]float64{1, 2, 1, 2, 1, 2, 1, 2, 1, 2}); err != nil {
 		t.Fatal(err)
 	}
@@ -111,17 +111,17 @@ func TestForecastExogRespondsToFutureX(t *testing.T) {
 	for i := range X {
 		X[i] = []float64{x[i]}
 	}
-	m, _ := NewARIMA(1, 0, 0)
+	m, _ := NewARIMA(Order{P: 1, D: 0, Q: 0})
 	if err := m.Fit(y, WithExog(X)); err != nil {
 		t.Fatal(err)
 	}
 	low := [][]float64{{0}, {0}, {0}}
 	high := [][]float64{{10}, {10}, {10}}
-	fLow, err := m.ForecastExog(3, low)
+	fLow, err := m.Forecast(3, WithFutureExog(low))
 	if err != nil {
 		t.Fatal(err)
 	}
-	fHigh, err := m.ForecastExog(3, high)
+	fHigh, err := m.Forecast(3, WithFutureExog(high))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,14 +141,14 @@ func TestForecastExogValidatesShape(t *testing.T) {
 		X[i] = []float64{float64(i), float64(i % 3)}
 		y[i] = float64(i) + math.Sin(float64(i))
 	}
-	m, _ := NewARIMA(1, 0, 0)
+	m, _ := NewARIMA(Order{P: 1, D: 0, Q: 0})
 	if err := m.Fit(y, WithExog(X)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.ForecastExog(3, [][]float64{{1, 1}, {1, 1}}); err == nil {
+	if _, err := m.Forecast(3, WithFutureExog([][]float64{{1, 1}, {1, 1}})); err == nil {
 		t.Error("wrong row count should error")
 	}
-	if _, err := m.ForecastExog(2, [][]float64{{1}, {1}}); err == nil {
+	if _, err := m.Forecast(2, WithFutureExog([][]float64{{1}, {1}})); err == nil {
 		t.Error("wrong column count should error")
 	}
 }
@@ -180,7 +180,7 @@ func TestFitWithExogTooShortErrors(t *testing.T) {
 	for i := range X {
 		X[i] = []float64{float64(i), float64(i * i), float64(i * i * i), float64(i + 1), float64(2 * i)}
 	}
-	m, _ := NewARIMA(0, 1, 0)
+	m, _ := NewARIMA(Order{P: 0, D: 1, Q: 0})
 	if err := m.Fit(y, WithExog(X)); err == nil {
 		t.Error("exog regression with too few rows should error")
 	}
@@ -194,14 +194,14 @@ func TestForecastExogInvalidHorizon(t *testing.T) {
 		X[i] = []float64{float64(i % 3)}
 		y[i] = float64(i%3) + math.Sin(float64(i))
 	}
-	m, _ := NewARIMA(1, 0, 0)
+	m, _ := NewARIMA(Order{P: 1, D: 0, Q: 0})
 	if err := m.Fit(y, WithExog(X)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.ForecastExog(0, nil); err == nil {
+	if _, err := m.Forecast(0, WithFutureExog([][]float64{{0}})); err == nil {
 		t.Error("non-positive horizon should error")
 	}
-	if _, err := m.ForecastIntervalExog(0, 0.95, nil); err == nil {
+	if _, err := m.ForecastInterval(0, 0.95, WithFutureExog([][]float64{{0}})); err == nil {
 		t.Error("non-positive horizon should error")
 	}
 }
@@ -221,14 +221,14 @@ func TestExogCSSRefinement(t *testing.T) {
 	for i := range X {
 		X[i] = []float64{x[i]}
 	}
-	m, _ := NewARIMA(1, 0, 1)
-	if err := m.Fit(y, WithExog(X), WithCSSRefinement()); err != nil {
+	m, _ := NewARIMA(Order{P: 1, D: 0, Q: 1})
+	if err := m.Fit(y, WithExog(X), WithMethod(CSS)); err != nil {
 		t.Fatal(err)
 	}
 	if b := m.Beta(); len(b) != 1 || math.Abs(b[0]-2.5) > 0.3 {
 		t.Fatalf("CSS exog beta=%v, want ~[2.5]", b)
 	}
-	f, err := m.ForecastExog(3, [][]float64{{0.1}, {0.2}, {0.3}})
+	f, err := m.Forecast(3, WithFutureExog([][]float64{{0.1}, {0.2}, {0.3}}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +256,7 @@ func TestSeasonalFitWithExogIsFinite(t *testing.T) {
 	for i := range X {
 		X[i] = []float64{x[i]}
 	}
-	model, err := NewSARIMA(1, 0, 0, 1, 0, 0, m)
+	model, err := NewSARIMA(Order{P: 1, D: 0, Q: 0}, SeasonalOrder{P: 1, D: 0, Q: 0, Period: m})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +270,7 @@ func TestSeasonalFitWithExogIsFinite(t *testing.T) {
 	for i := range futureX {
 		futureX[i] = []float64{float64(i%m) / float64(m)}
 	}
-	f, err := model.ForecastExog(m, futureX)
+	f, err := model.Forecast(m, WithFutureExog(futureX))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,11 +281,11 @@ func TestSeasonalFitWithExogIsFinite(t *testing.T) {
 	}
 
 	// The joint refinement must also handle seasonal factors + β together.
-	mleModel, _ := NewSARIMA(1, 0, 0, 1, 0, 0, m)
-	if err := mleModel.Fit(y, WithExog(X), WithMLE()); err != nil {
+	mleModel, _ := NewSARIMA(Order{P: 1, D: 0, Q: 0}, SeasonalOrder{P: 1, D: 0, Q: 0, Period: m})
+	if err := mleModel.Fit(y, WithExog(X), WithMethod(MLE)); err != nil {
 		t.Fatal(err)
 	}
-	fm, err := mleModel.ForecastExog(m, futureX)
+	fm, err := mleModel.Forecast(m, WithFutureExog(futureX))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -323,12 +323,12 @@ func TestExogMLEImprovesOrMatches(t *testing.T) {
 	for i := range X {
 		X[i] = []float64{x[i]}
 	}
-	hr, _ := NewARIMA(1, 0, 1)
+	hr, _ := NewARIMA(Order{P: 1, D: 0, Q: 1})
 	if err := hr.Fit(y, WithExog(X)); err != nil {
 		t.Fatal(err)
 	}
-	mle, _ := NewARIMA(1, 0, 1)
-	if err := mle.Fit(y, WithExog(X), WithMLE()); err != nil {
+	mle, _ := NewARIMA(Order{P: 1, D: 0, Q: 1})
+	if err := mle.Fit(y, WithExog(X), WithMethod(MLE)); err != nil {
 		t.Fatal(err)
 	}
 	// β stays sensible and finite under joint refinement.
@@ -339,7 +339,7 @@ func TestExogMLEImprovesOrMatches(t *testing.T) {
 	if mle.Sigma2() > hr.Sigma2()+1e-9 {
 		t.Fatalf("MLE sigma2 %v worse than HR %v", mle.Sigma2(), hr.Sigma2())
 	}
-	f, err := mle.ForecastExog(4, [][]float64{{0.1}, {0.2}, {0.3}, {0.4}})
+	f, err := mle.Forecast(4, WithFutureExog([][]float64{{0.1}, {0.2}, {0.3}, {0.4}}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,14 +365,14 @@ func TestAutoARIMAWithExogSelectsAndForecasts(t *testing.T) {
 	for i := range X {
 		X[i] = []float64{x[i]}
 	}
-	m, err := AutoARIMA(y, 3, 1, 3, WithExog(X))
+	m, err := AutoARIMA(y, Bounds{MaxP: 3, MaxD: 1, MaxQ: 3}, WithExog(X))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if b := m.Beta(); len(b) != 1 || math.Abs(b[0]-4) > 0.5 {
 		t.Fatalf("auto exog beta=%v, want ~[4]", b)
 	}
-	f, err := m.ForecastExog(3, [][]float64{{0.1}, {0.2}, {0.3}})
+	f, err := m.Forecast(3, WithFutureExog([][]float64{{0.1}, {0.2}, {0.3}}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -402,7 +402,7 @@ func TestAutoSARIMAWithExog(t *testing.T) {
 	for i := range X {
 		X[i] = []float64{x[i]}
 	}
-	model, err := AutoSARIMA(y, 2, 1, 2, 1, 1, m, WithExog(X))
+	model, err := AutoSARIMA(y, Bounds{MaxP: 2, MaxD: 1, MaxQ: 2}, SeasonalBounds{MaxP: 1, MaxQ: 1, Period: m}, WithExog(X))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -413,7 +413,7 @@ func TestAutoSARIMAWithExog(t *testing.T) {
 	for i := range futureX {
 		futureX[i] = []float64{math.Sin(float64(n+i) / 17.0)}
 	}
-	f, err := model.ForecastExog(m, futureX)
+	f, err := model.Forecast(m, WithFutureExog(futureX))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -430,10 +430,10 @@ func TestAutoExogInvalidMatrixErrors(t *testing.T) {
 		y[i] = math.Sin(float64(i))
 	}
 	badX := [][]float64{{1}, {2}} // wrong row count
-	if _, err := AutoARIMA(y, 2, 1, 2, WithExog(badX)); err == nil {
+	if _, err := AutoARIMA(y, Bounds{MaxP: 2, MaxD: 1, MaxQ: 2}, WithExog(badX)); err == nil {
 		t.Error("AutoARIMA with mismatched exog rows should error")
 	}
-	if _, err := AutoSARIMA(y, 2, 1, 2, 1, 1, 12, WithExog(badX)); err == nil {
+	if _, err := AutoSARIMA(y, Bounds{MaxP: 2, MaxD: 1, MaxQ: 2}, SeasonalBounds{MaxP: 1, MaxQ: 1, Period: 12}, WithExog(badX)); err == nil {
 		t.Error("AutoSARIMA with mismatched exog rows should error")
 	}
 }
@@ -446,7 +446,7 @@ func TestForecastMethodMismatchErrors(t *testing.T) {
 		X[i] = []float64{float64(i % 4)}
 		y[i] = 2*float64(i%4) + math.Sin(float64(i))
 	}
-	exog, _ := NewARIMA(1, 0, 0)
+	exog, _ := NewARIMA(Order{P: 1, D: 0, Q: 0})
 	if err := exog.Fit(y, WithExog(X)); err != nil {
 		t.Fatal(err)
 	}
@@ -456,14 +456,14 @@ func TestForecastMethodMismatchErrors(t *testing.T) {
 	if _, err := exog.ForecastInterval(3, 0.95); err == nil {
 		t.Error("ForecastInterval on an exog model should error")
 	}
-	plain, _ := NewARIMA(1, 0, 0)
+	plain, _ := NewARIMA(Order{P: 1, D: 0, Q: 0})
 	if err := plain.Fit(y); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := plain.ForecastExog(3, [][]float64{{1}, {1}, {1}}); err == nil {
-		t.Error("ForecastExog on a non-exog model should error")
+	if _, err := plain.Forecast(3, WithFutureExog([][]float64{{1}, {1}, {1}})); err == nil {
+		t.Error("Forecast with WithFutureExog on a non-exog model should error")
 	}
-	if _, err := plain.ForecastIntervalExog(3, 0.95, [][]float64{{1}, {1}, {1}}); err == nil {
-		t.Error("ForecastIntervalExog on a non-exog model should error")
+	if _, err := plain.ForecastInterval(3, 0.95, WithFutureExog([][]float64{{1}, {1}, {1}})); err == nil {
+		t.Error("ForecastInterval with WithFutureExog on a non-exog model should error")
 	}
 }

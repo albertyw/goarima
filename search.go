@@ -49,12 +49,12 @@ func (s searchSpace) evalCandidate(o order) candidate {
 		err   error
 	)
 	if s.period >= 2 {
-		model, err = NewSARIMA(p, s.d, q, P, s.bigD, Q, s.period)
+		model, err = NewSARIMA(Order{P: p, D: s.d, Q: q}, SeasonalOrder{P: P, D: s.bigD, Q: Q, Period: s.period})
 	} else {
 		if P > 0 || Q > 0 {
 			return candidate{ok: false}
 		}
-		model, err = NewARIMA(p, s.d, q)
+		model, err = NewARIMA(Order{P: p, D: s.d, Q: q})
 	}
 	if err != nil {
 		return candidate{ok: false}

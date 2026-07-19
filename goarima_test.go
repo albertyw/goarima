@@ -13,7 +13,7 @@ func TestRandomWalkFits(t *testing.T) {
 	// ARIMA(0,1,0) is the random-walk(-with-drift) baseline: no AR or MA terms,
 	// just differencing. It must fit and forecast, not error out.
 	series := []float64{1, 3, 2, 5, 4, 7, 6, 9, 8, 11}
-	model, err := NewARIMA(0, 1, 0)
+	model, err := NewARIMA(Order{P: 0, D: 1, Q: 0})
 	require.NoError(t, err)
 	require.NoError(t, model.Fit(series))
 
@@ -32,7 +32,7 @@ func TestNonInvertibleReturnsError(t *testing.T) {
 	// sequence, so an MA(1) fit lands outside the invertible region. The model
 	// must reject it with an error rather than return a diverging forecast.
 	series := []float64{1, 3, 2, 5, 4, 7, 6, 9, 8, 11}
-	model, err := NewARIMA(0, 1, 1)
+	model, err := NewARIMA(Order{P: 0, D: 1, Q: 1})
 	require.NoError(t, err)
 	assert.Error(t, model.Fit(series))
 }
@@ -75,7 +75,7 @@ func TestSimpleARIMA(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			model, err := NewARIMA(tc.p, tc.d, tc.q)
+			model, err := NewARIMA(Order{P: tc.p, D: tc.d, Q: tc.q})
 			require.NoError(t, err)
 			require.NotNil(t, model)
 			err = model.Fit(tc.data)
@@ -91,9 +91,9 @@ func TestSimpleARIMA(t *testing.T) {
 }
 
 func TestNewARIMAErrors(t *testing.T) {
-	_, err := NewARIMA(-1, 0, 0)
+	_, err := NewARIMA(Order{P: -1, D: 0, Q: 0})
 	assert.Error(t, err)
-	_, err = NewARIMA(0, 0, 0)
+	_, err = NewARIMA(Order{P: 0, D: 0, Q: 0})
 	assert.Error(t, err)
 }
 
@@ -113,7 +113,7 @@ func TestFitRejectsNonFiniteInput(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			series := []float64{1, 2, 1, 2, 1, 2, 1, 2, 1, 2}
 			series[3] = tc.bad
-			model, err := NewARIMA(1, 0, 0)
+			model, err := NewARIMA(Order{P: 1, D: 0, Q: 0})
 			require.NoError(t, err)
 			assert.Error(t, model.Fit(series))
 		})
@@ -121,7 +121,7 @@ func TestFitRejectsNonFiniteInput(t *testing.T) {
 }
 
 func TestFitTooShort(t *testing.T) {
-	model, err := NewARIMA(2, 1, 0)
+	model, err := NewARIMA(Order{P: 2, D: 1, Q: 0})
 	require.NoError(t, err)
 	assert.Error(t, model.Fit([]float64{1, 2}))
 }
@@ -130,7 +130,7 @@ func TestFitRejectsSeriesShorterThanExpandedMA(t *testing.T) {
 	// The expanded seasonal MA polynomial has degree q + Q·m (here 0 + 1·12 = 12),
 	// longer than the 8-point series. The length guard must account for the MA
 	// side too, otherwise the residual tail slice goes negative and panics.
-	model, err := NewSARIMA(0, 0, 0, 0, 0, 1, 12)
+	model, err := NewSARIMA(Order{P: 0, D: 0, Q: 0}, SeasonalOrder{P: 0, D: 0, Q: 1, Period: 12})
 	require.NoError(t, err)
 	series := make([]float64, 8)
 	for i := range series {
@@ -142,14 +142,14 @@ func TestFitRejectsSeriesShorterThanExpandedMA(t *testing.T) {
 func TestForecastBeforeFitErrors(t *testing.T) {
 	// Forecasting an unfitted model must error rather than silently returning a
 	// plausible-looking all-zero forecast from uninitialized state.
-	model, err := NewARIMA(2, 1, 1)
+	model, err := NewARIMA(Order{P: 2, D: 1, Q: 1})
 	require.NoError(t, err)
 	_, err = model.Forecast(3)
 	assert.Error(t, err)
 }
 
 func TestForecastInvalidHorizon(t *testing.T) {
-	model, err := NewARIMA(1, 0, 0)
+	model, err := NewARIMA(Order{P: 1, D: 0, Q: 0})
 	require.NoError(t, err)
 	require.NoError(t, model.Fit([]float64{1, 2, 1, 2, 1, 2}))
 	_, err = model.Forecast(0)
@@ -158,12 +158,11 @@ func TestForecastInvalidHorizon(t *testing.T) {
 
 func TestGetters(t *testing.T) {
 	data := []float64{1, 2, 1, 2, 1, 2, 1, 2, 1, 2}
-	model, err := NewARIMA(1, 0, 0)
+	model, err := NewARIMA(Order{P: 1, D: 0, Q: 0})
 	require.NoError(t, err)
 	require.NoError(t, model.Fit(data))
 
-	p, d, q := model.Orders()
-	assert.Equal(t, [3]int{1, 0, 0}, [3]int{p, d, q})
+	assert.Equal(t, Order{P: 1, D: 0, Q: 0}, model.Order())
 	assert.Len(t, model.Phi(), 1)
 	assert.Empty(t, model.Theta())
 	assert.Len(t, model.LastY(), 1)
@@ -176,7 +175,7 @@ func TestGettersReturnCopies(t *testing.T) {
 	// The slice getters must return copies: mutating a returned slice must not
 	// corrupt the model's state or change its forecasts.
 	series := genARMA11(500, 0.5, 0.4, 17)
-	model, err := NewARIMA(1, 0, 1)
+	model, err := NewARIMA(Order{P: 1, D: 0, Q: 1})
 	require.NoError(t, err)
 	require.NoError(t, model.Fit(series))
 
@@ -203,13 +202,13 @@ func TestFitWithCSSRefinementLowersResidualVariance(t *testing.T) {
 	// residual variance (it improves or falls back to the seed).
 	series := genARMA11(3000, 0.5, 0.4, 3)
 
-	plain, err := NewARIMA(1, 0, 1)
+	plain, err := NewARIMA(Order{P: 1, D: 0, Q: 1})
 	require.NoError(t, err)
 	require.NoError(t, plain.Fit(series))
 
-	refined, err := NewARIMA(1, 0, 1)
+	refined, err := NewARIMA(Order{P: 1, D: 0, Q: 1})
 	require.NoError(t, err)
-	require.NoError(t, refined.Fit(series, WithCSSRefinement()))
+	require.NoError(t, refined.Fit(series, WithMethod(CSS)))
 
 	assert.LessOrEqual(t, refined.Sigma2(), plain.Sigma2())
 }
@@ -218,9 +217,9 @@ func TestFitWithCSSRefinementRandomWalkNoop(t *testing.T) {
 	// ARIMA(0,1,0) has no coefficients to refine; the option must be a harmless
 	// no-op rather than an error.
 	series := []float64{1, 3, 2, 5, 4, 7, 6, 9, 8, 11}
-	model, err := NewARIMA(0, 1, 0)
+	model, err := NewARIMA(Order{P: 0, D: 1, Q: 0})
 	require.NoError(t, err)
-	require.NoError(t, model.Fit(series, WithCSSRefinement()))
+	require.NoError(t, model.Fit(series, WithMethod(CSS)))
 	assert.Empty(t, model.Phi())
 	assert.Empty(t, model.Theta())
 }
@@ -230,13 +229,13 @@ func TestFitWithMLEChangesCoefficients(t *testing.T) {
 	// not silently no-op.
 	series := genARMA11(2000, 0.5, 0.4, 13)
 
-	plain, err := NewARIMA(1, 0, 1)
+	plain, err := NewARIMA(Order{P: 1, D: 0, Q: 1})
 	require.NoError(t, err)
 	require.NoError(t, plain.Fit(series))
 
-	mle, err := NewARIMA(1, 0, 1)
+	mle, err := NewARIMA(Order{P: 1, D: 0, Q: 1})
 	require.NoError(t, err)
-	require.NoError(t, mle.Fit(series, WithMLE()))
+	require.NoError(t, mle.Fit(series, WithMethod(MLE)))
 
 	assert.NotEqual(t, plain.Phi()[0], mle.Phi()[0])
 	assert.True(t, isStationary(mle.Phi()))
@@ -246,9 +245,9 @@ func TestFitWithMLEChangesCoefficients(t *testing.T) {
 func TestFitWithMLEFiniteForecast(t *testing.T) {
 	// An MLE-refined fit must still produce a finite forecast.
 	series := genARMA11(1000, 0.6, 0.3, 21)
-	model, err := NewARIMA(1, 0, 1)
+	model, err := NewARIMA(Order{P: 1, D: 0, Q: 1})
 	require.NoError(t, err)
-	require.NoError(t, model.Fit(series, WithMLE()))
+	require.NoError(t, model.Fit(series, WithMethod(MLE)))
 
 	forecast, err := model.Forecast(5)
 	require.NoError(t, err)
@@ -257,18 +256,18 @@ func TestFitWithMLEFiniteForecast(t *testing.T) {
 	}
 }
 
-func TestFitWithMLETakesPrecedenceOverCSS(t *testing.T) {
-	// When both options are supplied, MLE wins (matching modern statsmodels'
-	// statespace default), so the fit equals an MLE-only fit.
+func TestFitLastMethodWins(t *testing.T) {
+	// Options apply in order, so a later WithMethod overrides an earlier one:
+	// WithMethod(CSS) then WithMethod(MLE) equals an MLE-only fit.
 	series := genARMA11(2000, 0.5, 0.4, 11)
 
-	both, err := NewARIMA(1, 0, 1)
+	both, err := NewARIMA(Order{P: 1, D: 0, Q: 1})
 	require.NoError(t, err)
-	require.NoError(t, both.Fit(series, WithCSSRefinement(), WithMLE()))
+	require.NoError(t, both.Fit(series, WithMethod(CSS), WithMethod(MLE)))
 
-	mleOnly, err := NewARIMA(1, 0, 1)
+	mleOnly, err := NewARIMA(Order{P: 1, D: 0, Q: 1})
 	require.NoError(t, err)
-	require.NoError(t, mleOnly.Fit(series, WithMLE()))
+	require.NoError(t, mleOnly.Fit(series, WithMethod(MLE)))
 
 	assert.Equal(t, mleOnly.Phi(), both.Phi())
 	assert.Equal(t, mleOnly.Theta(), both.Theta())
@@ -278,9 +277,9 @@ func TestFitWithMLERandomWalkNoop(t *testing.T) {
 	// ARIMA(0,1,0) has no coefficients to refine; the option must be a harmless
 	// no-op rather than an error.
 	series := []float64{1, 3, 2, 5, 4, 7, 6, 9, 8, 11}
-	model, err := NewARIMA(0, 1, 0)
+	model, err := NewARIMA(Order{P: 0, D: 1, Q: 0})
 	require.NoError(t, err)
-	require.NoError(t, model.Fit(series, WithMLE()))
+	require.NoError(t, model.Fit(series, WithMethod(MLE)))
 	assert.Empty(t, model.Phi())
 	assert.Empty(t, model.Theta())
 }
@@ -289,7 +288,7 @@ func TestARIMA(t *testing.T) {
 	data := []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	p, d, q := 1, 1, 1
 
-	model, err := NewARIMA(p, d, q)
+	model, err := NewARIMA(Order{P: p, D: d, Q: q})
 	require.NoError(t, err)
 	require.NotNil(t, model)
 
@@ -307,23 +306,20 @@ func TestARIMA(t *testing.T) {
 }
 
 func TestNewSARIMARejectsSeasonalPeriodBelowTwo(t *testing.T) {
-	_, err := NewSARIMA(1, 0, 0, 0, 1, 0, 1) // D>0 but m<2
+	_, err := NewSARIMA(Order{P: 1, D: 0, Q: 0}, SeasonalOrder{P: 0, D: 1, Q: 0, Period: 1}) // D>0 but m<2
 	require.Error(t, err)
 }
 
 func TestNewSARIMARejectsAllZeroOrders(t *testing.T) {
-	_, err := NewSARIMA(0, 0, 0, 0, 0, 0, 0)
+	_, err := NewSARIMA(Order{P: 0, D: 0, Q: 0}, SeasonalOrder{P: 0, D: 0, Q: 0, Period: 0})
 	require.Error(t, err)
 }
 
 func TestNewARIMAStillWorks(t *testing.T) {
-	m, err := NewARIMA(1, 1, 0)
+	m, err := NewARIMA(Order{P: 1, D: 1, Q: 0})
 	require.NoError(t, err)
-	p, d, q := m.Orders()
-	assert.Equal(t, [3]int{1, 1, 0}, [3]int{p, d, q})
-	_, D, _, period := m.SeasonalOrders()
-	assert.Equal(t, 0, D)
-	assert.Equal(t, 0, period)
+	assert.Equal(t, Order{P: 1, D: 1, Q: 0}, m.Order())
+	assert.Equal(t, SeasonalOrder{}, m.SeasonalOrder())
 }
 
 func TestSeasonalRandomWalkForecastRepeatsSeason(t *testing.T) {
@@ -335,7 +331,7 @@ func TestSeasonalRandomWalkForecastRepeatsSeason(t *testing.T) {
 	for i := 4; i < 40; i++ {
 		x = append(x, x[i-m]+0.001*r.NormFloat64())
 	}
-	model, err := NewSARIMA(0, 0, 0, 0, 1, 0, m)
+	model, err := NewSARIMA(Order{P: 0, D: 0, Q: 0}, SeasonalOrder{P: 0, D: 1, Q: 0, Period: m})
 	require.NoError(t, err)
 	require.NoError(t, model.Fit(x))
 	fc, err := model.Forecast(m)
@@ -351,7 +347,7 @@ func TestCombinedRegularAndSeasonalForecastFinite(t *testing.T) {
 	for i := 0; i < 60; i++ {
 		series = append(series, float64(i)+10*float64(i%m))
 	}
-	model, err := NewSARIMA(1, 1, 0, 0, 1, 0, m)
+	model, err := NewSARIMA(Order{P: 1, D: 1, Q: 0}, SeasonalOrder{P: 0, D: 1, Q: 0, Period: m})
 	require.NoError(t, err)
 	require.NoError(t, model.Fit(series))
 	fc, err := model.Forecast(12)

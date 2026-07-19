@@ -6,7 +6,7 @@ maximum-likelihood reference at the same orders:
 - **ARIMA (non-seasonal)** — `AutoARIMA` vs [pmdarima](https://alkaline-ml.com/pmdarima/).
 - **Prediction intervals** — `ForecastInterval` confidence bands vs pmdarima's.
 - **Seasonal models (SARIMAX)** — `AutoSARIMA` vs statsmodels **SARIMAX**.
-- **Regression with ARIMA errors** — `WithExog` / `ForecastExog` vs statsmodels
+- **Regression with ARIMA errors** — `WithExog` / `WithFutureExog` vs statsmodels
   **SARIMAX** with `exog=`.
 
 In every chart the grey line is the observed history, the dashed line marks the
@@ -44,7 +44,7 @@ forecasts follow each series' shape together.
 
 ```go
 series, _ := /* example/data/<name>.csv */
-model, _ := goarima.AutoARIMA(series, 5, 2, 5) // maxP, maxD, maxQ
+model, _ := goarima.AutoARIMA(series, goarima.Bounds{MaxP: 5, MaxD: 2, MaxQ: 5})
 forecast, _ := model.Forecast(horizon)
 ```
 
@@ -86,7 +86,7 @@ band widens with the horizon), and the bounds are `forecast ± z·√Var(k)`:
 
 ```go
 series, _ := /* example/data/<name>.csv */
-model, _ := goarima.AutoARIMA(series, 5, 2, 5)
+model, _ := goarima.AutoARIMA(series, goarima.Bounds{MaxP: 5, MaxD: 2, MaxQ: 5})
 fc, _ := model.ForecastInterval(horizon, 0.95) // horizon, confidence level
 // fc.Point, fc.Lower, fc.Upper, fc.StdErr
 ```
@@ -113,9 +113,13 @@ tighter and centred on the actual cycle.
 
 ```go
 // wide band: non-seasonal
-ns, _ := goarima.AutoARIMA(series, 5, 2, 5)              // ARIMA(4,1,0)
+ns, _ := goarima.AutoARIMA(series, goarima.Bounds{MaxP: 5, MaxD: 2, MaxQ: 5}) // ARIMA(4,1,0)
 // tight band: model the seasonality
-se, _ := goarima.AutoSARIMA(series, 3, 1, 3, 1, 1, 12)   // ARIMA(1,1,0)(1,1,0)[12]
+se, _ := goarima.AutoSARIMA(
+	series,
+	goarima.Bounds{MaxP: 3, MaxD: 1, MaxQ: 3},
+	goarima.SeasonalBounds{MaxP: 1, MaxQ: 1, Period: 12},
+) // ARIMA(1,1,0)(1,1,0)[12]
 fc, _ := se.ForecastInterval(24, 0.95)
 ```
 
@@ -128,7 +132,7 @@ settle toward constant width as the AR forecast decays to the mean:
 ![Lynx: nested 80% and 95% prediction intervals](images/lynx_interval.png)
 
 ```go
-model, _ := goarima.AutoARIMA(series, 5, 2, 5)           // ARIMA(4,0,0)
+model, _ := goarima.AutoARIMA(series, goarima.Bounds{MaxP: 5, MaxD: 2, MaxQ: 5}) // ARIMA(4,0,0)
 narrow, _ := model.ForecastInterval(20, 0.80)
 wide, _   := model.ForecastInterval(20, 0.95)
 ```
@@ -160,7 +164,11 @@ Monthly international airline passengers (1949–1960): a rising trend with a st
 
 ```go
 series, _ := /* example/data/airpassengers.csv */
-model, _ := goarima.AutoSARIMA(series, 3, 1, 3, 1, 1, 12) // maxP, maxD, maxQ, maxBigP, maxBigQ, m
+model, _ := goarima.AutoSARIMA(
+	series,
+	goarima.Bounds{MaxP: 3, MaxD: 1, MaxQ: 3},
+	goarima.SeasonalBounds{MaxP: 1, MaxQ: 1, Period: 12},
+)
 forecast, _ := model.Forecast(24)
 // selected: ARIMA(1,1,0)(1,1,0)[12]
 ```
@@ -189,7 +197,11 @@ Monthly Australian wine sales: a sharper, noisier 12-month cycle.
 
 ```go
 series, _ := /* example/data/wineind.csv */
-model, _ := goarima.AutoSARIMA(series, 3, 1, 3, 1, 1, 12) // maxP, maxD, maxQ, maxBigP, maxBigQ, m
+model, _ := goarima.AutoSARIMA(
+	series,
+	goarima.Bounds{MaxP: 3, MaxD: 1, MaxQ: 3},
+	goarima.SeasonalBounds{MaxP: 1, MaxQ: 1, Period: 12},
+)
 forecast, _ := model.Forecast(24)
 // selected: ARIMA(2,1,1)(0,1,1)[12]
 ```
@@ -219,16 +231,16 @@ and the residual `ηₜ` follows the ARIMA model — which is exactly how statsm
 SARIMAX with `exog=` and `trend="n"` parameterizes it.
 
 Supply the `n×k` regressor matrix at fit time with `WithExog`, read the estimated
-coefficients with `Beta()`, and forecast with `ForecastExog` (or
-`ForecastIntervalExog`), passing the future regressor rows:
+coefficients with `Beta()`, and forecast with `Forecast` (or `ForecastInterval`),
+passing the future regressor rows via `WithFutureExog`:
 
 ```go
 series, _ := /* the target yₜ */
 X := /* n×k matrix, one row of regressors per observation */
-model, _ := goarima.NewARIMA(1, 0, 0)
-model.Fit(series, goarima.WithExog(X), goarima.WithMLE())
-beta := model.Beta()                       // estimated β
-forecast, _ := model.ForecastExog(12, futureX) // futureX is h×k
+model, _ := goarima.NewARIMA(goarima.Order{P: 1, D: 0, Q: 0})
+model.Fit(series, goarima.WithExog(X), goarima.WithMethod(goarima.MLE))
+beta := model.Beta()                                              // estimated β
+forecast, _ := model.Forecast(12, goarima.WithFutureExog(futureX)) // futureX is h×k
 ```
 
 The chart below uses a synthetic demand series `yₜ = 10 + 2.5·xₜ + ηₜ` whose
@@ -243,8 +255,9 @@ simply reverts to the series mean:
 This is the key distinction from a seasonal model: an exogenous regressor lets the
 forecast respond to *known future inputs* (a planned price, a scheduled campaign, a
 weather forecast) rather than only the series' own past. Prediction intervals from
-`ForecastIntervalExog` carry the same `σ²·Σψ²` error variance as the non-exog case
-(β-estimation uncertainty is excluded, matching statsmodels' default `conf_int`).
+`ForecastInterval` (with `WithFutureExog`) carry the same `σ²·Σψ²` error variance as
+the non-exog case (β-estimation uncertainty is excluded, matching statsmodels'
+default `conf_int`).
 
 `AutoARIMA` and `AutoSARIMA` accept `WithExog` too — they net the regressors out
 before choosing the differencing orders, then re-estimate β at each candidate fit.

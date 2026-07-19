@@ -104,9 +104,9 @@ func FuzzFitForecast(f *testing.F) {
 			err   error
 		)
 		if m >= 2 && (bigP > 0 || bigD > 0 || bigQ > 0) {
-			model, err = NewSARIMA(p, d, q, bigP, bigD, bigQ, m)
+			model, err = NewSARIMA(Order{P: p, D: d, Q: q}, SeasonalOrder{P: bigP, D: bigD, Q: bigQ, Period: m})
 		} else {
-			model, err = NewARIMA(p, d, q)
+			model, err = NewARIMA(Order{P: p, D: d, Q: q})
 		}
 		if err != nil {
 			return
@@ -136,40 +136,41 @@ func fuzzMatrix(data []byte, rows, cols int) [][]float64 {
 }
 
 // checkExogForecasts is checkForecasts for a model fit with exogenous regressors:
-// the exog forecasters must never panic and, when they succeed, return h finite,
-// correctly-sized values with lower ≤ upper.
+// the exog forecasters (Forecast/ForecastInterval with WithFutureExog) must never
+// panic and, when they succeed, return h finite, correctly-sized values with
+// lower ≤ upper.
 func checkExogForecasts(t *testing.T, m *ARIMA, h int, futureX [][]float64) {
 	t.Helper()
-	if pred, err := m.ForecastExog(h, futureX); err == nil {
+	if pred, err := m.Forecast(h, WithFutureExog(futureX)); err == nil {
 		if len(pred) != h {
-			t.Fatalf("ForecastExog returned %d values, want %d", len(pred), h)
+			t.Fatalf("Forecast returned %d values, want %d", len(pred), h)
 		}
 		for i, v := range pred {
 			if math.IsNaN(v) || math.IsInf(v, 0) {
-				t.Fatalf("ForecastExog produced non-finite value %v at %d", v, i)
+				t.Fatalf("Forecast produced non-finite value %v at %d", v, i)
 			}
 		}
 	}
-	if fc, err := m.ForecastIntervalExog(h, 0.95, futureX); err == nil {
+	if fc, err := m.ForecastInterval(h, 0.95, WithFutureExog(futureX)); err == nil {
 		if len(fc.Point) != h || len(fc.Lower) != h || len(fc.Upper) != h {
-			t.Fatalf("ForecastIntervalExog lengths %d/%d/%d, want %d", len(fc.Point), len(fc.Lower), len(fc.Upper), h)
+			t.Fatalf("ForecastInterval lengths %d/%d/%d, want %d", len(fc.Point), len(fc.Lower), len(fc.Upper), h)
 		}
 		for i := range fc.Point {
 			if math.IsNaN(fc.Lower[i]) || math.IsInf(fc.Lower[i], 0) ||
 				math.IsNaN(fc.Upper[i]) || math.IsInf(fc.Upper[i], 0) {
-				t.Fatalf("ForecastIntervalExog produced non-finite bound at %d", i)
+				t.Fatalf("ForecastInterval produced non-finite bound at %d", i)
 			}
 			if fc.Lower[i] > fc.Upper[i] {
-				t.Fatalf("ForecastIntervalExog lower %v > upper %v at %d", fc.Lower[i], fc.Upper[i], i)
+				t.Fatalf("ForecastInterval lower %v > upper %v at %d", fc.Lower[i], fc.Upper[i], i)
 			}
 		}
 	}
 }
 
-// FuzzExog drives regression-with-ARIMA-errors: WithExog Fit plus ForecastExog/
-// ForecastIntervalExog with a fuzzed n×k design matrix and h×k future rows,
-// asserting the β estimation, differencing, and forecast plumbing never panic
-// and successful exog forecasts stay finite and correctly sized.
+// FuzzExog drives regression-with-ARIMA-errors: WithExog Fit plus Forecast/
+// ForecastInterval with WithFutureExog over a fuzzed n×k design matrix and h×k
+// future rows, asserting the β estimation, differencing, and forecast plumbing
+// never panic and successful exog forecasts stay finite and correctly sized.
 func FuzzExog(f *testing.F) {
 	seed := make([]float64, 40)
 	for i := range seed {
@@ -191,7 +192,7 @@ func FuzzExog(f *testing.F) {
 		X := fuzzMatrix(xdata, len(series), k)
 		futureX := fuzzMatrix(xdata, h, k)
 
-		model, err := NewARIMA(p, d, q)
+		model, err := NewARIMA(Order{P: p, D: d, Q: q})
 		if err != nil {
 			return
 		}
@@ -203,7 +204,7 @@ func FuzzExog(f *testing.F) {
 }
 
 // FuzzFitRefine drives the optimizer and root-repair refinement paths
-// (WithCSSRefinement/WithMLE/WithRootRepair) on a fuzzed series, asserting the
+// (WithMethod(CSS)/WithMethod(MLE)/WithRootRepair) on a fuzzed series, asserting the
 // gonum Nelder-Mead search and root reflection never panic and still yield
 // finite, correctly-sized forecasts.
 func FuzzFitRefine(f *testing.F) {
@@ -221,20 +222,20 @@ func FuzzFitRefine(f *testing.F) {
 		h = boundOrder(h, 23) + 1 // 1..24
 		series := fuzzSeries(data)
 
-		model, err := NewARIMA(p, d, q)
+		model, err := NewARIMA(Order{P: p, D: d, Q: q})
 		if err != nil {
 			return
 		}
 		var opts []FitOption
 		switch boundOrder(opt, 3) {
 		case 0:
-			opts = []FitOption{WithCSSRefinement()}
+			opts = []FitOption{WithMethod(CSS)}
 		case 1:
-			opts = []FitOption{WithMLE()}
+			opts = []FitOption{WithMethod(MLE)}
 		case 2:
 			opts = []FitOption{WithRootRepair()}
 		case 3:
-			opts = []FitOption{WithMLE(), WithRootRepair()}
+			opts = []FitOption{WithMethod(MLE), WithRootRepair()}
 		}
 		if err := model.Fit(series, opts...); err != nil {
 			return
@@ -260,7 +261,7 @@ func FuzzAutoARIMA(f *testing.F) {
 		h = boundOrder(h, 23) + 1 // 1..24
 		series := fuzzSeries(data)
 
-		model, err := AutoARIMA(series, maxP, maxD, maxQ)
+		model, err := AutoARIMA(series, Bounds{MaxP: maxP, MaxD: maxD, MaxQ: maxQ})
 		if err != nil {
 			return
 		}
@@ -289,7 +290,7 @@ func FuzzAutoSARIMA(f *testing.F) {
 		h = boundOrder(h, 23) + 1 // 1..24
 		series := fuzzSeries(data)
 
-		model, err := AutoSARIMA(series, maxP, maxD, maxQ, maxBigP, maxBigQ, m)
+		model, err := AutoSARIMA(series, Bounds{MaxP: maxP, MaxD: maxD, MaxQ: maxQ}, SeasonalBounds{MaxP: maxBigP, MaxQ: maxBigQ, Period: m})
 		if err != nil {
 			return
 		}
@@ -323,7 +324,7 @@ func FuzzAutoExog(f *testing.F) {
 		X := fuzzMatrix(xdata, len(series), k)
 		futureX := fuzzMatrix(xdata, h, k)
 
-		model, err := AutoARIMA(series, maxP, maxD, maxQ, WithExog(X))
+		model, err := AutoARIMA(series, Bounds{MaxP: maxP, MaxD: maxD, MaxQ: maxQ}, WithExog(X))
 		if err != nil {
 			return
 		}

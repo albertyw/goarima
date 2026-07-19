@@ -42,31 +42,27 @@ func TestExpandSeasonalEmptyIsEmpty(t *testing.T) {
 }
 
 func TestNewSARIMAStoresSeasonalOrders(t *testing.T) {
-	m, err := NewSARIMA(1, 0, 1, 2, 1, 1, 12) // p,d,q,P,D,Q,m
+	m, err := NewSARIMA(Order{P: 1, D: 0, Q: 1}, SeasonalOrder{P: 2, D: 1, Q: 1, Period: 12})
 	assert.NoError(t, err)
-	P, D, Q, period := m.SeasonalOrders()
-	assert.Equal(t, 2, P)
-	assert.Equal(t, 1, D)
-	assert.Equal(t, 1, Q)
-	assert.Equal(t, 12, period)
+	assert.Equal(t, SeasonalOrder{P: 2, D: 1, Q: 1, Period: 12}, m.SeasonalOrder())
 }
 
 func TestNewSARIMASeasonalCoeffGettersLength(t *testing.T) {
-	m, err := NewSARIMA(1, 0, 1, 2, 0, 1, 12)
+	m, err := NewSARIMA(Order{P: 1, D: 0, Q: 1}, SeasonalOrder{P: 2, D: 0, Q: 1, Period: 12})
 	assert.NoError(t, err)
 	assert.Len(t, m.SeasonalPhi(), 2)
 	assert.Len(t, m.SeasonalTheta(), 1)
 }
 
 func TestNewSARIMARejectsSeasonalARWithoutValidPeriod(t *testing.T) {
-	_, err := NewSARIMA(0, 0, 0, 1, 0, 0, 1) // P=1 but m<2
+	_, err := NewSARIMA(Order{P: 0, D: 0, Q: 0}, SeasonalOrder{P: 1, D: 0, Q: 0, Period: 1}) // P=1 but m<2
 	assert.Error(t, err)
 }
 
 func TestNewSARIMARejectsNegativeSeasonalOrders(t *testing.T) {
-	_, err := NewSARIMA(1, 0, 0, -1, 0, 0, 12)
+	_, err := NewSARIMA(Order{P: 1, D: 0, Q: 0}, SeasonalOrder{P: -1, D: 0, Q: 0, Period: 12})
 	assert.Error(t, err)
-	_, err = NewSARIMA(1, 0, 0, 0, 0, -1, 12)
+	_, err = NewSARIMA(Order{P: 1, D: 0, Q: 0}, SeasonalOrder{P: 0, D: 0, Q: -1, Period: 12})
 	assert.Error(t, err)
 }
 
@@ -80,7 +76,7 @@ func TestFitRecoversSeasonalAR(t *testing.T) {
 	for i := m; i < n; i++ {
 		x[i] = 0.6*x[i-m] + r.NormFloat64()
 	}
-	model, err := NewSARIMA(0, 0, 0, 1, 0, 0, m)
+	model, err := NewSARIMA(Order{P: 0, D: 0, Q: 0}, SeasonalOrder{P: 1, D: 0, Q: 0, Period: m})
 	assert.NoError(t, err)
 	assert.NoError(t, model.Fit(x))
 	sphi := model.SeasonalPhi()
@@ -125,9 +121,9 @@ func TestFitSeasonalARWithMLERecoversCoefficient(t *testing.T) {
 	for i := m; i < n; i++ {
 		x[i] = 0.7*x[i-m] + r.NormFloat64()
 	}
-	model, err := NewSARIMA(0, 0, 0, 1, 0, 0, m)
+	model, err := NewSARIMA(Order{P: 0, D: 0, Q: 0}, SeasonalOrder{P: 1, D: 0, Q: 0, Period: m})
 	assert.NoError(t, err)
-	assert.NoError(t, model.Fit(x, WithMLE()))
+	assert.NoError(t, model.Fit(x, WithMethod(MLE)))
 	assert.InDelta(t, 0.7, model.SeasonalPhi()[0], 0.07)
 }
 
@@ -141,7 +137,7 @@ func TestForecastIntervalSeasonalARMatchesExpandedPsi(t *testing.T) {
 	for i := m; i < n; i++ {
 		x[i] = 0.6*x[i-m] + r.NormFloat64()
 	}
-	model, err := NewSARIMA(0, 0, 0, 1, 0, 0, m)
+	model, err := NewSARIMA(Order{P: 0, D: 0, Q: 0}, SeasonalOrder{P: 1, D: 0, Q: 0, Period: m})
 	assert.NoError(t, err)
 	assert.NoError(t, model.Fit(x))
 
@@ -166,7 +162,7 @@ func TestFitSeasonalConstantSeriesIsZero(t *testing.T) {
 	for i := range s {
 		s[i] = 5
 	}
-	model, err := NewSARIMA(1, 0, 0, 1, 0, 0, 4)
+	model, err := NewSARIMA(Order{P: 1, D: 0, Q: 0}, SeasonalOrder{P: 1, D: 0, Q: 0, Period: 4})
 	assert.NoError(t, err)
 	assert.NoError(t, model.Fit(s))
 	assert.InDelta(t, 0, model.Phi()[0], 1e-12)
@@ -184,7 +180,7 @@ func TestFitSeasonalMAErrorsOnShortSeries(t *testing.T) {
 	for i := range s {
 		s[i] = float64(i % 3)
 	}
-	model, err := NewSARIMA(0, 0, 0, 0, 0, 1, 12)
+	model, err := NewSARIMA(Order{P: 0, D: 0, Q: 0}, SeasonalOrder{P: 0, D: 0, Q: 1, Period: 12})
 	assert.NoError(t, err)
 	assert.Error(t, model.Fit(s))
 }
@@ -202,9 +198,9 @@ func TestFitRecoversSeasonalMA(t *testing.T) {
 	for i := m; i < n; i++ {
 		x[i] = e[i] + 0.5*e[i-m]
 	}
-	model, err := NewSARIMA(0, 0, 0, 0, 0, 1, m)
+	model, err := NewSARIMA(Order{P: 0, D: 0, Q: 0}, SeasonalOrder{P: 0, D: 0, Q: 1, Period: m})
 	assert.NoError(t, err)
-	assert.NoError(t, model.Fit(x, WithMLE()))
+	assert.NoError(t, model.Fit(x, WithMethod(MLE)))
 	assert.InDelta(t, 0.5, model.SeasonalTheta()[0], 0.12)
 }
 
@@ -217,7 +213,7 @@ func TestFitSeasonalARMAForecastFinite(t *testing.T) {
 	for i := m + 1; i < n; i++ {
 		x[i] = 0.4*x[i-1] + 0.5*x[i-m] - 0.2*x[i-m-1] + r.NormFloat64()
 	}
-	model, err := NewSARIMA(1, 0, 0, 1, 0, 0, m)
+	model, err := NewSARIMA(Order{P: 1, D: 0, Q: 0}, SeasonalOrder{P: 1, D: 0, Q: 0, Period: m})
 	assert.NoError(t, err)
 	assert.NoError(t, model.Fit(x))
 	fc, err := model.Forecast(24)

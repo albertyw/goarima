@@ -21,16 +21,41 @@ type Forecast struct {
 // standard errors come from the model's MA(∞) representation:
 // Var(k steps) = σ²·Σ_{j<k} ψ_j², with the differencing operators folded into the
 // AR side so the variances are on the original (integrated) scale.
-func (m *ARIMA) ForecastInterval(h int, level float64) (*Forecast, error) {
-	if m.exogDim > 0 {
-		return nil, errors.New("model was fit with exogenous regressors; use ForecastIntervalExog")
+//
+// If the model was fit with exogenous regressors (WithExog), the matching future
+// regressors must be supplied via WithFutureExog (and must not be supplied
+// otherwise); their regression mean shifts Point/Lower/Upper. β estimation
+// uncertainty is excluded from the band, matching statsmodels' default conf_int.
+func (m *ARIMA) ForecastInterval(h int, level float64, opts ...ForecastOption) (*Forecast, error) {
+	var cfg forecastConfig
+	for _, opt := range opts {
+		opt.applyForecast(&cfg)
 	}
-	return m.forecastIntervalCore(h, level)
+	if err := m.checkFutureExog(cfg.futureX); err != nil {
+		return nil, err
+	}
+	fc, err := m.forecastIntervalCore(h, level)
+	if err != nil {
+		return nil, err
+	}
+	if m.exogDim == 0 {
+		return fc, nil
+	}
+	xb, err := exogMean(cfg.futureX, m.beta, h)
+	if err != nil {
+		return nil, err
+	}
+	for i := 0; i < h; i++ {
+		fc.Point[i] += xb[i]
+		fc.Lower[i] += xb[i]
+		fc.Upper[i] += xb[i]
+	}
+	return fc, nil
 }
 
 // forecastIntervalCore computes the prediction interval on the forecastLevel
-// scale (the η scale when exog is in use). ForecastIntervalExog shifts its
-// Point/Lower/Upper by the future regression mean.
+// scale (the η scale when exog is in use). ForecastInterval shifts its
+// Point/Lower/Upper by the future regression mean when exog is in use.
 func (m *ARIMA) forecastIntervalCore(h int, level float64) (*Forecast, error) {
 	if level <= 0 || level >= 1 {
 		return nil, errors.New("confidence level must be in (0, 1)")

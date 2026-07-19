@@ -34,18 +34,18 @@ func parseFloatsLines(t *testing.T, csv string) []float64 {
 }
 
 func TestAutoSARIMARejectsSmallPeriod(t *testing.T) {
-	_, err := AutoSARIMA([]float64{1, 2, 3, 4}, 2, 1, 2, 0, 0, 1)
+	_, err := AutoSARIMA([]float64{1, 2, 3, 4}, Bounds{MaxP: 2, MaxD: 1, MaxQ: 2}, SeasonalBounds{MaxP: 0, MaxQ: 0, Period: 1})
 	require.Error(t, err)
 }
 
 func TestAutoSARIMASelectsSeasonalDifferencingOnAirPassengers(t *testing.T) {
 	series := parseFloatsLines(t, airPassengersAutoCSV)
-	model, err := AutoSARIMA(series, 3, 1, 3, 0, 0, 12)
+	model, err := AutoSARIMA(series, Bounds{MaxP: 3, MaxD: 1, MaxQ: 3}, SeasonalBounds{MaxP: 0, MaxQ: 0, Period: 12})
 	require.NoError(t, err)
 
-	_, D, _, period := model.SeasonalOrders()
-	assert.Equal(t, 1, D, "AirPassengers is strongly seasonal -> D=1")
-	assert.Equal(t, 12, period)
+	so := model.SeasonalOrder()
+	assert.Equal(t, 1, so.D, "AirPassengers is strongly seasonal -> D=1")
+	assert.Equal(t, 12, so.Period)
 
 	fc, err := model.Forecast(12)
 	require.NoError(t, err)
@@ -63,30 +63,28 @@ func TestAutoSARIMASelectsSeasonalDifferencingOnAirPassengers(t *testing.T) {
 
 func TestAutoSARIMAThreadsParallelDeterministically(t *testing.T) {
 	series := parseFloatsLines(t, airPassengersAutoCSV)
-	serial, err := AutoSARIMA(series, 3, 1, 3, 0, 0, 12)
+	serial, err := AutoSARIMA(series, Bounds{MaxP: 3, MaxD: 1, MaxQ: 3}, SeasonalBounds{MaxP: 0, MaxQ: 0, Period: 12})
 	require.NoError(t, err)
-	par, err := AutoSARIMA(series, 3, 1, 3, 0, 0, 12, WithParallel())
+	par, err := AutoSARIMA(series, Bounds{MaxP: 3, MaxD: 1, MaxQ: 3}, SeasonalBounds{MaxP: 0, MaxQ: 0, Period: 12}, WithParallel())
 	require.NoError(t, err)
-	sp, sd, sq := serial.Orders()
-	pp, pd, pq := par.Orders()
-	assert.Equal(t, [3]int{sp, sd, sq}, [3]int{pp, pd, pq})
+	assert.Equal(t, serial.Order(), par.Order())
 	assert.Equal(t, serial.Phi(), par.Phi())
 }
 
 func TestAutoSARIMARejectsNegativeMaxOrders(t *testing.T) {
-	_, err := AutoSARIMA([]float64{1, 2, 3, 4, 5, 6}, -1, 1, 2, 0, 0, 12)
+	_, err := AutoSARIMA([]float64{1, 2, 3, 4, 5, 6}, Bounds{MaxP: -1, MaxD: 1, MaxQ: 2}, SeasonalBounds{MaxP: 0, MaxQ: 0, Period: 12})
 	require.Error(t, err)
 }
 
 func TestAutoSARIMARejectsTooShortSeries(t *testing.T) {
-	_, err := AutoSARIMA([]float64{1}, 2, 1, 2, 0, 0, 12)
+	_, err := AutoSARIMA([]float64{1}, Bounds{MaxP: 2, MaxD: 1, MaxQ: 2}, SeasonalBounds{MaxP: 0, MaxQ: 0, Period: 12})
 	require.Error(t, err)
 }
 
 func TestAutoSARIMARejectsNonFiniteSeries(t *testing.T) {
 	series := parseFloatsLines(t, airPassengersAutoCSV)
 	series[3] = math.Inf(1)
-	_, err := AutoSARIMA(series, 2, 1, 2, 0, 0, 12)
+	_, err := AutoSARIMA(series, Bounds{MaxP: 2, MaxD: 1, MaxQ: 2}, SeasonalBounds{MaxP: 0, MaxQ: 0, Period: 12})
 	require.Error(t, err)
 }
 
@@ -94,13 +92,13 @@ func TestAutoSARIMAReportsNoCandidate(t *testing.T) {
 	// maxP=maxQ=0 leaves only (0,0), which the search rejects, so no candidate
 	// can be fit.
 	series := parseFloatsLines(t, airPassengersAutoCSV)
-	_, err := AutoSARIMA(series, 0, 1, 0, 0, 0, 12)
+	_, err := AutoSARIMA(series, Bounds{MaxP: 0, MaxD: 1, MaxQ: 0}, SeasonalBounds{MaxP: 0, MaxQ: 0, Period: 12})
 	require.Error(t, err)
 }
 
 func TestAutoSARIMAStepwiseProducesValidFit(t *testing.T) {
 	series := parseFloatsLines(t, airPassengersAutoCSV)
-	model, err := AutoSARIMA(series, 3, 1, 3, 0, 0, 12, WithStepwise())
+	model, err := AutoSARIMA(series, Bounds{MaxP: 3, MaxD: 1, MaxQ: 3}, SeasonalBounds{MaxP: 0, MaxQ: 0, Period: 12}, WithStepwise())
 	require.NoError(t, err)
 	fc, err := model.Forecast(12)
 	require.NoError(t, err)
@@ -120,18 +118,17 @@ func TestAutoSARIMASelectsSeasonalAR(t *testing.T) {
 	for i := m; i < n; i++ {
 		x[i] = 0.7*x[i-m] + r.NormFloat64()
 	}
-	model, err := AutoSARIMA(x, 2, 0, 2, 1, 1, m) // maxP,maxD,maxQ,maxBigP,maxBigQ,m
+	model, err := AutoSARIMA(x, Bounds{MaxP: 2, MaxD: 0, MaxQ: 2}, SeasonalBounds{MaxP: 1, MaxQ: 1, Period: m})
 	require.NoError(t, err)
-	P, D, _, _ := model.SeasonalOrders()
-	assert.Equal(t, 0, D, "stochastic seasonality -> no seasonal differencing")
-	assert.Equal(t, 1, P, "seasonal AR term selected")
+	so := model.SeasonalOrder()
+	assert.Equal(t, 0, so.D, "stochastic seasonality -> no seasonal differencing")
+	assert.Equal(t, 1, so.P, "seasonal AR term selected")
 }
 
 func TestAutoSARIMANoSeasonalDifferencingOnNoise(t *testing.T) {
 	// A non-seasonal noise series still fits via the m>=2 path but with D=0.
 	series := strongSeasonal(12, 12, 0, 1, 99) // amp 0 -> pure noise
-	model, err := AutoSARIMA(series, 3, 1, 3, 0, 0, 12)
+	model, err := AutoSARIMA(series, Bounds{MaxP: 3, MaxD: 1, MaxQ: 3}, SeasonalBounds{MaxP: 0, MaxQ: 0, Period: 12})
 	require.NoError(t, err)
-	_, D, _, _ := model.SeasonalOrders()
-	assert.Equal(t, 0, D)
+	assert.Equal(t, 0, model.SeasonalOrder().D)
 }

@@ -51,7 +51,8 @@ func parseSeries(csv string) ([]float64, error) {
 // report prints a model's orders, coefficients, and forecast in a layout that
 // mirrors the statsmodels reference script for easy side-by-side comparison.
 func report(label, name string, model *goarima.ARIMA, horizon int) {
-	p, d, q := model.Orders()
+	o := model.Order()
+	p, d, q := o.P, o.D, o.Q
 	forecast, err := model.Forecast(horizon)
 	if err != nil {
 		fmt.Printf("[%s] %s: %v\n", label, name, err)
@@ -70,14 +71,14 @@ func report(label, name string, model *goarima.ARIMA, horizon int) {
 // hard, weakly-identified orders. Order selection stays on the fast HR path;
 // only the single chosen order is MLE-refined, so the demo stays quick.
 func runAuto(name string, series []float64, horizon int) {
-	model, err := goarima.AutoARIMA(series, 5, 2, 5)
+	model, err := goarima.AutoARIMA(series, goarima.Bounds{MaxP: 5, MaxD: 2, MaxQ: 5})
 	if err != nil {
 		fmt.Printf("[goarima] %s: %v\n", name, err)
 		return
 	}
-	p, d, q := model.Orders()
-	if refined, rerr := goarima.NewARIMA(p, d, q); rerr == nil {
-		if ferr := refined.Fit(series, goarima.WithMLE()); ferr == nil {
+	o := model.Order()
+	if refined, rerr := goarima.NewARIMA(o); rerr == nil {
+		if ferr := refined.Fit(series, goarima.WithMethod(goarima.MLE)); ferr == nil {
 			model = refined // keep the HR fit if MLE refinement fails
 		}
 	}
@@ -88,13 +89,15 @@ func runAuto(name string, series []float64, horizon int) {
 // prints them under a distinct [goarima-seasonal] label. compare.py parses only
 // the [goarima] blocks, so this extra block is ignored there.
 func runAutoSeasonal(name string, series []float64, period, horizon int) {
-	model, err := goarima.AutoSARIMA(series, 3, 1, 3, 1, 1, period)
+	model, err := goarima.AutoSARIMA(series, goarima.Bounds{MaxP: 3, MaxD: 1, MaxQ: 3}, goarima.SeasonalBounds{MaxP: 1, MaxQ: 1, Period: period})
 	if err != nil {
 		fmt.Printf("[goarima-seasonal] %s: %v\n", name, err)
 		return
 	}
-	p, d, q := model.Orders()
-	bigP, bigD, bigQ, m := model.SeasonalOrders()
+	o := model.Order()
+	p, d, q := o.P, o.D, o.Q
+	so := model.SeasonalOrder()
+	bigP, bigD, bigQ, m := so.P, so.D, so.Q, so.Period
 	forecast, err := model.Forecast(horizon)
 	if err != nil {
 		fmt.Printf("[goarima-seasonal] %s: %v\n", name, err)
@@ -108,13 +111,14 @@ func runAutoSeasonal(name string, series []float64, period, horizon int) {
 // fitAutoMLE selects orders with AutoARIMA and refits them with exact MLE (as
 // runAuto does), returning the model and its "ARIMA(p,d,q)" label.
 func fitAutoMLE(series []float64) (*goarima.ARIMA, string, error) {
-	model, err := goarima.AutoARIMA(series, 5, 2, 5)
+	model, err := goarima.AutoARIMA(series, goarima.Bounds{MaxP: 5, MaxD: 2, MaxQ: 5})
 	if err != nil {
 		return nil, "", err
 	}
-	p, d, q := model.Orders()
-	if refined, rerr := goarima.NewARIMA(p, d, q); rerr == nil {
-		if refined.Fit(series, goarima.WithMLE()) == nil {
+	o := model.Order()
+	p, d, q := o.P, o.D, o.Q
+	if refined, rerr := goarima.NewARIMA(o); rerr == nil {
+		if refined.Fit(series, goarima.WithMethod(goarima.MLE)) == nil {
 			model = refined // keep the HR fit if MLE refinement fails
 		}
 	}
@@ -123,14 +127,16 @@ func fitAutoMLE(series []float64) (*goarima.ARIMA, string, error) {
 
 // fitAutoSeasonalMLE is fitAutoMLE's seasonal counterpart, via AutoSARIMA.
 func fitAutoSeasonalMLE(series []float64, period int) (*goarima.ARIMA, string, error) {
-	model, err := goarima.AutoSARIMA(series, 3, 1, 3, 1, 1, period)
+	model, err := goarima.AutoSARIMA(series, goarima.Bounds{MaxP: 3, MaxD: 1, MaxQ: 3}, goarima.SeasonalBounds{MaxP: 1, MaxQ: 1, Period: period})
 	if err != nil {
 		return nil, "", err
 	}
-	p, d, q := model.Orders()
-	bigP, bigD, bigQ, m := model.SeasonalOrders()
-	if refined, rerr := goarima.NewSARIMA(p, d, q, bigP, bigD, bigQ, m); rerr == nil {
-		if refined.Fit(series, goarima.WithMLE()) == nil {
+	o := model.Order()
+	p, d, q := o.P, o.D, o.Q
+	so := model.SeasonalOrder()
+	bigP, bigD, bigQ, m := so.P, so.D, so.Q, so.Period
+	if refined, rerr := goarima.NewSARIMA(o, so); rerr == nil {
+		if refined.Fit(series, goarima.WithMethod(goarima.MLE)) == nil {
 			model = refined
 		}
 	}
@@ -183,19 +189,19 @@ func exogExample(n, h int) (y []float64, X, futureX [][]float64) {
 
 // printExog fits a model with WithExog (+MLE) and prints one [goarima-exog]
 // block: the order, the estimated regression coefficients Beta(), and the
-// ForecastExog at the supplied future covariate. The distinct prefix keeps it out
-// of compare.py (which matches [goarima]); plot_exog.py parses it.
+// Forecast at the supplied future covariate (WithFutureExog). The distinct prefix
+// keeps it out of compare.py (which matches [goarima]); plot_exog.py parses it.
 func printExog(name string, p, d, q, horizon int, y []float64, X, futureX [][]float64) {
-	model, err := goarima.NewARIMA(p, d, q)
+	model, err := goarima.NewARIMA(goarima.Order{P: p, D: d, Q: q})
 	if err != nil {
 		fmt.Printf("[goarima-exog] %s: %v\n", name, err)
 		return
 	}
-	if err := model.Fit(y, goarima.WithExog(X), goarima.WithMLE()); err != nil {
+	if err := model.Fit(y, goarima.WithExog(X), goarima.WithMethod(goarima.MLE)); err != nil {
 		fmt.Printf("[goarima-exog] %s: %v\n", name, err)
 		return
 	}
-	forecast, err := model.ForecastExog(horizon, futureX)
+	forecast, err := model.Forecast(horizon, goarima.WithFutureExog(futureX))
 	if err != nil {
 		fmt.Printf("[goarima-exog] %s: %v\n", name, err)
 		return

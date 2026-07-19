@@ -61,7 +61,7 @@ func TestScoreBICPenalizesParametersMoreThanAIC(t *testing.T) {
 func TestWithCriterionSetsConfig(t *testing.T) {
 	var cfg fitConfig
 	assert.Equal(t, AIC, cfg.criterion, "default criterion is AIC (zero value)")
-	WithCriterion(BIC)(&cfg)
+	WithCriterion(BIC).applyAuto(&cfg)
 	assert.Equal(t, BIC, cfg.criterion)
 }
 
@@ -82,15 +82,15 @@ func TestBICSelectsSimplerOrderThanAIC(t *testing.T) {
 	// BIC keeps AR(1); both agree on d, so the comparison is on p+q alone.
 	series := ar2Weak(160, 0.5, 0.15, 6)
 
-	aicModel, err := AutoARIMA(series, 4, 2, 4, WithCriterion(AIC))
+	aicModel, err := AutoARIMA(series, Bounds{MaxP: 4, MaxD: 2, MaxQ: 4}, WithCriterion(AIC))
 	require.NoError(t, err)
-	bicModel, err := AutoARIMA(series, 4, 2, 4, WithCriterion(BIC))
+	bicModel, err := AutoARIMA(series, Bounds{MaxP: 4, MaxD: 2, MaxQ: 4}, WithCriterion(BIC))
 	require.NoError(t, err)
 
-	ap, ad, aq := aicModel.Orders()
-	bp, bd, bq := bicModel.Orders()
-	assert.Equal(t, ad, bd, "differencing order should match; this test compares p+q only")
-	assert.Less(t, bp+bq, ap+aq, "BIC should select fewer AR+MA terms than AIC")
+	a := aicModel.Order()
+	b := bicModel.Order()
+	assert.Equal(t, a.D, b.D, "differencing order should match; this test compares p+q only")
+	assert.Less(t, b.P+b.Q, a.P+a.Q, "BIC should select fewer AR+MA terms than AIC")
 }
 
 func TestAutoARIMAHonorsCriterion(t *testing.T) {
@@ -98,7 +98,7 @@ func TestAutoARIMAHonorsCriterion(t *testing.T) {
 	// with a finite forecast.
 	series := rampWithNoise(120, 0.3, 7)
 	for _, c := range []Criterion{AIC, BIC, AICc} {
-		model, err := AutoARIMA(series, 4, 2, 4, WithCriterion(c))
+		model, err := AutoARIMA(series, Bounds{MaxP: 4, MaxD: 2, MaxQ: 4}, WithCriterion(c))
 		require.NoError(t, err)
 		fc, err := model.Forecast(5)
 		require.NoError(t, err)

@@ -15,10 +15,11 @@ It fits and forecasts ARIMA(p, d, q) models. By default, coefficients are
 estimated with the Hannan-Rissanen method (pure linear algebra), so fitting is
 deterministic and fast. The trade-off is that the estimates are approximate:
 they will not match a maximum-likelihood library (statsmodels / pmdarima)
-exactly. Two optional refinement steps tighten the coefficients: a
-conditional-sum-of-squares search (`WithCSSRefinement`) and an exact Gaussian
-maximum-likelihood fit via the Kalman filter (`WithMLE`, matching statsmodels'
-`method="statespace"` default). See [Limitations](#limitations).
+exactly. Two optional refinement methods tighten the coefficients, selected with
+`WithMethod`: a conditional-sum-of-squares search (`WithMethod(goarima.CSS)`) and
+an exact Gaussian maximum-likelihood fit via the Kalman filter
+(`WithMethod(goarima.MLE)`, matching statsmodels' `method="statespace"` default).
+See [Limitations](#limitations).
 
 **New to time series?** [`docs/arima.md`](docs/arima.md) explains ARIMA and every
 algorithm implemented here — in plain language with the key equations — for
@@ -53,13 +54,13 @@ import (
 func main() {
 	series := []float64{112, 118, 132, 129, 121, 135, 148, 148, 136, 119 /* … */}
 
-	model, err := goarima.AutoARIMA(series, 5, 2, 5) // maxP, maxD, maxQ
+	model, err := goarima.AutoARIMA(series, goarima.Bounds{MaxP: 5, MaxD: 2, MaxQ: 5})
 	if err != nil {
 		panic(err)
 	}
 
-	p, d, q := model.Orders()
-	fmt.Printf("selected ARIMA(%d,%d,%d)\n", p, d, q)
+	o := model.Order()
+	fmt.Printf("selected ARIMA(%d,%d,%d)\n", o.P, o.D, o.Q)
 
 	forecast, err := model.Forecast(12) // next 12 steps
 	if err != nil {
@@ -74,7 +75,7 @@ func main() {
 When you already know the orders, construct the model directly:
 
 ```go
-model, err := goarima.NewARIMA(1, 1, 1) // p, d, q
+model, err := goarima.NewARIMA(goarima.Order{P: 1, D: 1, Q: 1})
 if err != nil {
 	panic(err)
 }
@@ -98,13 +99,20 @@ and period `m`; `AutoSARIMA` selects `D` (via the seasonal-strength test), then
 
 ```go
 // Explicit: the airline model ARIMA(0,1,1)(0,1,1) with period 12.
-model, err := goarima.NewSARIMA(0, 1, 1, 0, 1, 1, 12) // p, d, q, P, D, Q, m
+model, err := goarima.NewSARIMA(
+	goarima.Order{P: 0, D: 1, Q: 1},
+	goarima.SeasonalOrder{P: 0, D: 1, Q: 1, Period: 12},
+)
 
 // Automatic: choose p, d, q, P, Q (and D) for a monthly (m=12) series.
-model, err := goarima.AutoSARIMA(series, 3, 1, 3, 1, 1, 12) // maxP, maxD, maxQ, maxBigP, maxBigQ, m
+model, err := goarima.AutoSARIMA(
+	series,
+	goarima.Bounds{MaxP: 3, MaxD: 1, MaxQ: 3},
+	goarima.SeasonalBounds{MaxP: 1, MaxQ: 1, Period: 12},
+)
 ```
 
-`SeasonalOrders()` returns `(P, D, Q, m)`, and `SeasonalPhi()`/`SeasonalTheta()`
+`SeasonalOrder()` returns `{P, D, Q, Period}`, and `SeasonalPhi()`/`SeasonalTheta()`
 return the seasonal AR/MA factors (`Phi()`/`Theta()` return the regular ones).
 The fit is validated against statsmodels'
 [SARIMAX](https://www.statsmodels.org/stable/generated/statsmodels.tsa.statespace.sarimax.SARIMAX.html)
@@ -117,42 +125,42 @@ To let external predictors drive the series, pass an `n×k` regressor matrix `X`
 with `WithExog`. goarima fits *regression with ARIMA errors*,
 `yₜ = Xₜ·β + ηₜ`, where `ηₜ` follows the ARIMA model — the same parameterization
 as statsmodels SARIMAX with `exog=` and `trend="n"`. Read the coefficients with
-`Beta()` and forecast with `ForecastExog` / `ForecastIntervalExog`, supplying the
-future regressor rows (`h×k`):
+`Beta()` and forecast with `Forecast` / `ForecastInterval`, passing the future
+regressor rows (`h×k`) via `WithFutureExog`:
 
 ```go
-model, err := goarima.NewARIMA(1, 0, 0)
-err = model.Fit(series, goarima.WithExog(X), goarima.WithMLE())
-beta := model.Beta()                          // estimated β (length k)
-forecast, err := model.ForecastExog(12, futureX) // futureX is 12×k
-fc, err := model.ForecastIntervalExog(12, 0.95, futureX)
+model, err := goarima.NewARIMA(goarima.Order{P: 1, D: 0, Q: 0})
+err = model.Fit(series, goarima.WithExog(X), goarima.WithMethod(goarima.MLE))
+beta := model.Beta()                                              // estimated β (length k)
+forecast, err := model.Forecast(12, goarima.WithFutureExog(futureX)) // futureX is 12×k
+fc, err := model.ForecastInterval(12, 0.95, goarima.WithFutureExog(futureX))
 ```
 
-`β` is estimated jointly with the ARMA coefficients under `WithMLE` /
-`WithCSSRefinement` (a two-step OLS seed otherwise). `WithExog` also works with
-`NewSARIMA` and threads through `AutoARIMA` / `AutoSARIMA`. A model fit with
-exogenous regressors must use `ForecastExog` rather than `Forecast` (and
-vice-versa); calling the wrong one returns an error.
+`β` is estimated jointly with the ARMA coefficients under `WithMethod(goarima.MLE)`
+/ `WithMethod(goarima.CSS)` (a two-step OLS seed otherwise). `WithExog` also works
+with `NewSARIMA` and threads through `AutoARIMA` / `AutoSARIMA`. A model fit with
+exogenous regressors requires `WithFutureExog` when forecasting (and a plain model
+rejects it); the mismatch returns an error.
 
 ### Coefficient refinement
 
-By default `Fit` uses the Hannan-Rissanen estimate. Two opt-in options refine it
-with a derivative-free Nelder-Mead search seeded from the Hannan-Rissanen fit:
+By default `Fit` uses the Hannan-Rissanen estimate (`WithMethod(goarima.HannanRissanen)`,
+the zero value). `WithMethod` selects one of two refinements instead, each a
+derivative-free Nelder-Mead search seeded from the Hannan-Rissanen fit:
 
-- `WithCSSRefinement()` minimizes the conditional sum of squares (a least-squares
-  fit).
-- `WithMLE()` minimizes the exact Gaussian negative log-likelihood computed with
-  a Kalman filter, matching statsmodels' `method="statespace"` default.
+- `WithMethod(goarima.CSS)` minimizes the conditional sum of squares (a
+  least-squares fit).
+- `WithMethod(goarima.MLE)` minimizes the exact Gaussian negative log-likelihood
+  computed with a Kalman filter, matching statsmodels' `method="statespace"` default.
 
 Both move the coefficients toward a maximum-likelihood fit and never make the fit
 worse — a refined estimate is kept only if it is stationary, invertible, and
-strictly improves on the seed, otherwise the seed is used unchanged. If both
-options are supplied, `WithMLE` takes precedence.
+strictly improves on the seed, otherwise the seed is used unchanged.
 
 ```go
-err := model.Fit(series, goarima.WithMLE())
+err := model.Fit(series, goarima.WithMethod(goarima.MLE))
 // AutoARIMA accepts the same options and threads them through every candidate fit:
-model, err := goarima.AutoARIMA(series, 5, 2, 5, goarima.WithMLE())
+model, err := goarima.AutoARIMA(series, goarima.Bounds{MaxP: 5, MaxD: 2, MaxQ: 5}, goarima.WithMethod(goarima.MLE))
 ```
 
 ### Repairing unstable fixed-order fits
@@ -161,11 +169,11 @@ By default `Fit` returns an error when the Hannan-Rissanen estimate for an
 explicit `(p,d,q)` lands outside the stationary/invertible region.
 `WithRootRepair()` instead reflects the offending roots back inside the unit
 circle (to their reciprocals) and returns a valid model. It composes with
-`WithMLE`/`WithCSSRefinement` (repair yields a valid seed the optimizer then
-refines) and threads through `AutoARIMA`/`AutoSARIMA`.
+`WithMethod(goarima.MLE)`/`WithMethod(goarima.CSS)` (repair yields a valid seed the
+optimizer then refines) and threads through `AutoARIMA`/`AutoSARIMA`.
 
 ```go
-model, _ := goarima.NewARIMA(0, 0, 1)
+model, _ := goarima.NewARIMA(goarima.Order{P: 0, D: 0, Q: 1})
 // Without WithRootRepair this errors when the MA estimate is non-invertible.
 err := model.Fit(series, goarima.WithRootRepair())
 // model.Theta() is now invertible (roots reflected inside the unit circle).
@@ -173,8 +181,9 @@ err := model.Fit(series, goarima.WithRootRepair())
 
 ### Order-search options
 
-`AutoARIMA` takes three further options that tune *how* the orders are searched
-(they only affect `AutoARIMA`; `Fit` ignores them):
+`AutoARIMA` takes four further options that tune *how* the orders are searched.
+These are `AutoOption`s, not `FitOption`s, so they apply only to `AutoARIMA` /
+`AutoSARIMA` — passing one to a plain `Fit` is a compile-time error:
 
 - `WithCriterion(c)` — the information criterion to minimize: `AIC` (default),
   `BIC` (penalizes extra parameters more), or `AICc` (small-sample-corrected AIC).
@@ -184,15 +193,14 @@ err := model.Fit(series, goarima.WithRootRepair())
 - `WithParallel()` — fit candidate orders concurrently across `GOMAXPROCS`
   goroutines. Selection is deterministic and identical to the serial search, so it
   only changes speed — and it pays off only when each fit is expensive (e.g. with
-  `WithMLE`); for the fast default Hannan-Rissanen fits the goroutine overhead
-  outweighs the benefit.
+  `WithMethod(goarima.MLE)`); for the fast default Hannan-Rissanen fits the
+  goroutine overhead outweighs the benefit.
 - `WithContext(ctx)` — cancel a long order search. When `ctx` is cancelled (or its
   deadline passes) `AutoARIMA`/`AutoSARIMA` stop between candidate fits and return
-  an error wrapping the context cause. It only affects the auto-search; a plain
-  `Fit` ignores it.
+  an error wrapping the context cause.
 
 ```go
-model, err := goarima.AutoARIMA(series, 5, 2, 5,
+model, err := goarima.AutoARIMA(series, goarima.Bounds{MaxP: 5, MaxD: 2, MaxQ: 5},
     goarima.WithCriterion(goarima.BIC),
     goarima.WithStepwise(),
 )
@@ -221,7 +229,7 @@ The interval widths match statsmodels' `get_forecast().conf_int()`.
 ### Inspecting a fitted model
 
 ```go
-model.Orders()   // (p, d, q)
+model.Order()    // Order{P, D, Q}
 model.Phi()      // AR coefficients (copy)
 model.Theta()    // MA coefficients (copy)
 model.Beta()     // exogenous regression coefficients (copy; empty without WithExog)
@@ -297,8 +305,8 @@ inline and the exact settings used to generate them (`example/plot_seasonal.py`)
 
 [`docs/examples.md`](docs/examples.md) also walks through an exogenous-regressor
 example (`example/plot_exog.py`): a covariate-driven demand series where
-`WithExog` lets the `ForecastExog` forecast track a known future covariate while a
-plain ARIMA reverts to the mean. goarima's exog forecast lands on top of
+`WithExog` lets the forecast (with `WithFutureExog`) track a known future covariate
+while a plain ARIMA reverts to the mean. goarima's exog forecast lands on top of
 statsmodels SARIMAX at the same order.
 
 ![Regression with ARIMA errors](docs/images/exog.png)
@@ -308,16 +316,17 @@ statsmodels SARIMAX at the same order.
 This is a pure-Go implementation that aims for clarity over completeness:
 
 - **Approximate by default.** The default Hannan-Rissanen fit is close to, but
-  not identical to, statsmodels' default. The optional `WithMLE` refinement adds
-  an exact Gaussian maximum-likelihood fit (Kalman filter), though small numeric
-  differences from statsmodels remain. For seasonal AR/MA models, the fast default
-  uses an approximate seasonal seed; `WithMLE` matches SARIMAX.
+  not identical to, statsmodels' default. The optional `WithMethod(goarima.MLE)`
+  refinement adds an exact Gaussian maximum-likelihood fit (Kalman filter), though
+  small numeric differences from statsmodels remain. For seasonal AR/MA models, the
+  fast default uses an approximate seasonal seed; `WithMethod(goarima.MLE)` matches
+  SARIMAX.
 - **Unstable fixed-order fits are rejected by default; opt into repair.** Without
   `WithRootRepair()`, an explicit `(p,d,q)` whose Hannan-Rissanen estimate falls
   outside the stationary/invertible region returns an error. Pass
   `WithRootRepair()` to instead reflect the offending roots back inside the unit
-  circle and return a valid model. (`WithMLE`/`WithCSSRefinement` already keep the
-  refined fit in-region, matching statsmodels' default `enforce_*`.)
+  circle and return a valid model. (`WithMethod(goarima.MLE)`/`WithMethod(goarima.CSS)`
+  already keep the refined fit in-region, matching statsmodels' default `enforce_*`.)
 
 ## Development
 
