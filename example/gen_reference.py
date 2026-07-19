@@ -175,11 +175,9 @@ def interval_fit(series, order, horizon, alpha):
     }
 
 
-def exog_reference() -> dict:
-    """Build a synthetic regression-with-ARIMA-errors series and fit it with
-    statsmodels SARIMAX(exog=...). Captures β, the AR/MA factors, and a forecast
-    (plus conf_int) at supplied future regressors. d==0 so forecast levels are
-    directly comparable. The data is embedded so the Go test fits identical y/X."""
+def build_exog_data():
+    """Construct the synthetic regression-with-ARIMA-errors dataset shared by the
+    exog and param_se fixtures (so both fit the identical embedded y/X)."""
     rng = np.random.default_rng(20260622)
     n = 200
     order = (1, 0, 0)
@@ -197,6 +195,15 @@ def exog_reference() -> dict:
     fx1 = np.sin(np.arange(n, n + horizon) / 5.0)
     fx2 = (np.arange(n, n + horizon) % 7).astype(float)
     fX = np.column_stack([fx1, fx2])
+    return order, horizon, alpha, X, y, fX
+
+
+def exog_reference() -> dict:
+    """Build a synthetic regression-with-ARIMA-errors series and fit it with
+    statsmodels SARIMAX(exog=...). Captures β, the AR/MA factors, and a forecast
+    (plus conf_int) at supplied future regressors. d==0 so forecast levels are
+    directly comparable. The data is embedded so the Go test fits identical y/X."""
+    order, horizon, alpha, X, y, fX = build_exog_data()
 
     res = sm.tsa.statespace.SARIMAX(
         y,
@@ -229,6 +236,58 @@ def exog_reference() -> dict:
     }
 
 
+# Parameter standard-error examples. Fit statsmodels SARIMAX with
+# cov_type="approx" (numeric-Hessian observed information, the direct analogue of
+# goarima's numeric-Hessian covariance) and capture per-coefficient std errors.
+PARAM_SE = [
+    ("lynx_ar2", load("lynx.csv"), (2, 0, 0)),
+    ("lynx_ma1", load("lynx.csv"), (0, 0, 1)),
+]
+
+
+def param_se_fit(series, order) -> dict:
+    """Fit a fixed-order SARIMAX and capture coefficient names, values, and the
+    cov_type='approx' standard errors (res.bse). The series is mean-centered and
+    stationarity/invertibility enforced so the model matches goarima's (goarima
+    centers the series and constrains the coefficients to the stable region)."""
+    y = np.asarray(series, dtype=float)
+    yd = y - y.mean()
+    res = sm.tsa.statespace.SARIMAX(
+        yd,
+        order=order,
+        trend="n",
+        enforce_stationarity=True,
+        enforce_invertibility=True,
+    ).fit(disp=False, cov_type="approx")
+    return {
+        "order": list(order),
+        "params": list(res.param_names),
+        "coef": [float(v) for v in res.params],
+        "bse": [float(v) for v in res.bse],
+    }
+
+
+def param_se_exog() -> dict:
+    """SARIMAX(exog=...) standard errors on the shared build_exog_data() series.
+    The regression carries the level, so y is not centered here (goarima centers
+    the regression residual η); stationarity/invertibility are enforced."""
+    order, _, _, X, y, _ = build_exog_data()
+    res = sm.tsa.statespace.SARIMAX(
+        y,
+        exog=X,
+        order=order,
+        trend="n",
+        enforce_stationarity=True,
+        enforce_invertibility=True,
+    ).fit(disp=False, cov_type="approx")
+    return {
+        "order": list(order),
+        "params": list(res.param_names),
+        "coef": [float(v) for v in res.params],
+        "bse": [float(v) for v in res.bse],
+    }
+
+
 def main() -> None:
     fixtures = {
         "_meta": {
@@ -250,6 +309,10 @@ def main() -> None:
             name: interval_fit(s, o, h, a) for name, s, o, h, a in INTERVAL
         },
         "exog": exog_reference(),
+        "param_se": {
+            **{name: param_se_fit(s, o) for name, s, o in PARAM_SE},
+            "exog": param_se_exog(),
+        },
     }
     os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
     with open(OUT_PATH, "w") as handle:

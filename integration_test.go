@@ -151,6 +151,16 @@ type refExogFit struct {
 	Upper    []float64   `json:"upper"`
 }
 
+// refParamSE is one statsmodels fit capturing cov_type="approx" per-coefficient
+// standard errors (res.bse), used to validate goarima's StdErrors/Summary. The
+// exog entry is fit on the same embedded data as the Exog fixture.
+type refParamSE struct {
+	Order  []int     `json:"order"`
+	Params []string  `json:"params"`
+	Coef   []float64 `json:"coef"`
+	Bse    []float64 `json:"bse"`
+}
+
 // refFixture is the whole committed pmdarima_reference.json document.
 type refFixture struct {
 	Meta          map[string]string             `json:"_meta"`
@@ -160,6 +170,7 @@ type refFixture struct {
 	SeasonalARMA  map[string]refSeasonalARMAFit `json:"seasonal_arma"`
 	Interval      map[string]refIntervalFit     `json:"interval"`
 	Exog          refExogFit                    `json:"exog"`
+	ParamSE       map[string]refParamSE         `json:"param_se"`
 }
 
 // loadReference parses the embedded pmdarima fixture (no Python at test time).
@@ -538,6 +549,51 @@ func TestExogMatchesStatsmodels(t *testing.T) {
 	}
 }
 
+// TestParamStdErrorsMatchStatsmodels checks goarima's MLE parameter standard
+// errors (StdErrors, from the numeric-Hessian observed information) against
+// statsmodels' cov_type="approx" SEs (res.bse), computed the same way on the
+// same model (the fixture mean-centers and enforces stationarity/invertibility to
+// match goarima). goarima's StdErrors excludes sigma2 and is in canonical order
+// (β, φ, Φₛ, θ, Θₛ), so it aligns element-wise with the reference params up to
+// (but excluding) the trailing sigma2 entry.
+//
+// The exog case uses a looser tolerance: goarima centers the regression residual
+// η (subtracts mean(η)) while statsmodels' trend="n" does not, so the standard
+// error of a nonzero-mean regressor (x2) differs by ~15% even though the point
+// estimates agree. The pure-AR/MA lynx cases isolate the SE machinery and match
+// tightly.
+func TestParamStdErrorsMatchStatsmodels(t *testing.T) {
+	ref := loadReference(t)
+	series := referenceSeries(t)
+
+	for key, want := range ref.ParamSE {
+		t.Run(key, func(t *testing.T) {
+			p, d, q := want.Order[0], want.Order[1], want.Order[2]
+			model, err := goarima.NewARIMA(goarima.Order{P: p, D: d, Q: q})
+			require.NoError(t, err)
+
+			relTol := 0.05
+			if key == "exog" {
+				relTol = 0.20
+				require.NoError(t, model.Fit(ref.Exog.Y, goarima.WithExog(ref.Exog.X), goarima.WithMethod(goarima.MLE)))
+			} else {
+				seriesName := map[string]string{"lynx_ar2": "Lynx", "lynx_ma1": "Lynx"}[key]
+				s := series[seriesName]
+				require.NotNilf(t, s, "no series for %s", key)
+				require.NoError(t, model.Fit(s, goarima.WithMethod(goarima.MLE)))
+			}
+
+			se, err := model.StdErrors()
+			require.NoError(t, err)
+			// Reference includes a trailing sigma2; goarima excludes it.
+			require.Len(t, se, len(want.Bse)-1)
+			for i := range se {
+				assert.InDeltaf(t, want.Bse[i], se[i], relTol*want.Bse[i], "%s SE[%s]", key, want.Params[i])
+			}
+		})
+	}
+}
+
 // --- Tier 3: goarima golden baseline (regression guard) ---
 
 // goldenFit is one fitted goarima model captured in the golden fixture.
@@ -548,6 +604,7 @@ type goldenFit struct {
 	Theta    []float64 `json:"theta"`
 	Forecast []float64 `json:"forecast"`
 	Sigma2   float64   `json:"sigma2"`
+	StdErr   []float64 `json:"std_err"`
 }
 
 // goldenAutoSeasonalFit captures one AutoSARIMA result (selection + fit) as a
@@ -638,6 +695,10 @@ func TestGoldenWithMLE(t *testing.T) {
 			assertCoeffsClose(t, "theta", want.Theta, model.Theta(), goldenCoeffTol)
 			assertForecastClose(t, want.Forecast, forecast, goldenRelTol)
 
+			se, err := model.StdErrors()
+			require.NoError(t, err)
+			assertCoeffsClose(t, "std_err", want.StdErr, se, goldenCoeffTol)
+
 			scale := math.Abs(want.Sigma2)
 			if scale < 1 {
 				scale = 1
@@ -691,6 +752,8 @@ func writeGolden(t *testing.T, ref refFixture, series map[string][]float64) {
 	fits := make(map[string]goldenFit, len(ref.Fixed))
 	for name, fix := range ref.Fixed {
 		model, forecast := fitGoldenWithMLE(t, series[name], fix.Order, fix.Horizon)
+		se, err := model.StdErrors()
+		require.NoError(t, err)
 		fits[name] = goldenFit{
 			Order:    fix.Order,
 			Horizon:  fix.Horizon,
@@ -698,6 +761,7 @@ func writeGolden(t *testing.T, ref refFixture, series map[string][]float64) {
 			Theta:    model.Theta(),
 			Forecast: forecast,
 			Sigma2:   model.Sigma2(),
+			StdErr:   se,
 		}
 	}
 	autoSeasonal := make(map[string]goldenAutoSeasonalFit, len(autoSeasonalCases))

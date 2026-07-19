@@ -126,3 +126,38 @@ func TestSummaryRequiresMLE(t *testing.T) {
 		t.Error("Summary should error without MLE")
 	}
 }
+
+func TestStdErrorsExog(t *testing.T) {
+	// y_t = 3·x_t + AR(1) noise; deterministic x and seeded noise.
+	n := 400
+	y := make([]float64, n)
+	X := make([][]float64, n)
+	r := rand.New(rand.NewSource(4))
+	var e float64
+	for i := 0; i < n; i++ {
+		x := math.Sin(float64(i) / 5)
+		e = 0.5*e + r.NormFloat64()
+		y[i] = 3*x + e
+		X[i] = []float64{x}
+	}
+	m, _ := NewARIMA(Order{P: 1})
+	if err := m.Fit(y, WithExog(X), WithMethod(MLE)); err != nil {
+		t.Fatal(err)
+	}
+	s, err := m.Summary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Params[0].Name != "x1" {
+		t.Errorf("first row name=%q want x1", s.Params[0].Name)
+	}
+	se, _ := m.StdErrors()
+	if len(se) != 2 { // β, φ
+		t.Fatalf("len(se)=%d want 2", len(se))
+	}
+	for i, v := range se {
+		if !(v > 0) || math.IsInf(v, 0) {
+			t.Errorf("se[%d]=%v not finite-positive", i, v)
+		}
+	}
+}
