@@ -80,3 +80,49 @@ func TestStdErrorsAR1CloseToClosedForm(t *testing.T) {
 		t.Errorf("SE(phi)=%v want ≈ %.5f (±30%%)", se, want)
 	}
 }
+
+func TestSummaryStructure(t *testing.T) {
+	series := arSeries(0.6, 400, 2)
+	m, _ := NewARIMA(Order{P: 1})
+	if err := m.Fit(series, WithMethod(MLE)); err != nil {
+		t.Fatal(err)
+	}
+	s, err := m.Summary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.NObs != 400 {
+		t.Errorf("NObs=%d want 400", s.NObs)
+	}
+	// Rows: one per coefficient (here just ar.L1) + a final sigma2 row.
+	if len(s.Params) != 2 || s.Params[0].Name != "ar.L1" || s.Params[1].Name != "sigma2" {
+		t.Fatalf("rows=%v", s.Params)
+	}
+	// AIC/BIC match the hand computation with k = p+q+P+Q+exog+1 = 2.
+	k := 2.0
+	wantAIC := -2*s.LogLik + 2*k
+	wantBIC := -2*s.LogLik + k*math.Log(float64(s.NObs))
+	if math.Abs(s.AIC-wantAIC) > 1e-9 || math.Abs(s.BIC-wantBIC) > 1e-9 {
+		t.Errorf("AIC=%.6f want %.6f; BIC=%.6f want %.6f", s.AIC, wantAIC, s.BIC, wantBIC)
+	}
+	// z and CI internal consistency for the AR row.
+	p := s.Params[0]
+	if math.Abs(p.ZScore-p.Coef/p.StdErr) > 1e-9 {
+		t.Errorf("z=%.6f want %.6f", p.ZScore, p.Coef/p.StdErr)
+	}
+	if !(p.CILower < p.Coef && p.Coef < p.CIUpper) {
+		t.Errorf("CI [%.4f,%.4f] does not bracket coef %.4f", p.CILower, p.CIUpper, p.Coef)
+	}
+	if s.String() == "" {
+		t.Error("String() empty")
+	}
+}
+
+func TestSummaryRequiresMLE(t *testing.T) {
+	series := arSeries(0.6, 400, 3)
+	m, _ := NewARIMA(Order{P: 1})
+	_ = m.Fit(series) // HR default
+	if _, err := m.Summary(); err == nil {
+		t.Error("Summary should error without MLE")
+	}
+}

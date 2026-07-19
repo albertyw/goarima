@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/albertyw/gaussian"
+	"gonum.org/v1/gonum/stat/distuv"
 )
 
 // numHessian returns the symmetric Hessian of f at x, approximated by central
@@ -158,4 +160,81 @@ func (m *ARIMA) StdErrors() ([]float64, error) {
 		se[i] = math.Sqrt(m.paramCov[i][i])
 	}
 	return se, nil
+}
+
+// ParamStat is one row of a Summary: a coefficient with its inference stats.
+type ParamStat struct {
+	Name    string
+	Coef    float64
+	StdErr  float64
+	ZScore  float64 // Coef / StdErr
+	PValue  float64 // two-sided, standard normal
+	CILower float64 // 95% by default
+	CIUpper float64
+}
+
+// Summary bundles a fitted (MLE) model's parameter statistics and fit metrics.
+type Summary struct {
+	Params []ParamStat // one row per coefficient, then a final sigma2 row
+	NObs   int
+	LogLik float64
+	AIC    float64
+	BIC    float64
+	Sigma2 float64
+}
+
+// Summary returns the parameter-inference summary for an MLE-fit model
+// (coefficient estimates, standard errors, z-statistics, p-values, and
+// confidence intervals, plus model-level fit statistics). It returns an error
+// if the model was not fit with WithMethod(MLE).
+func (m *ARIMA) Summary() (*Summary, error) {
+	se, err := m.StdErrors()
+	if err != nil {
+		return nil, err
+	}
+	coef := packCoef(m.beta, m.phi, m.seasonalPhi, m.theta, m.seasonalTheta)
+	z975 := distuv.UnitNormal.Quantile(0.975)
+	rows := make([]ParamStat, 0, len(coef)+1)
+	for i := range coef {
+		rows = append(rows, statRow(m.paramNames[i], coef[i], se[i], z975))
+	}
+	// sigma2: asymptotic SE σ̂²·√(2/n) (see spec D3).
+	rows = append(rows, statRow("sigma2", m.sigma2, m.sigma2*math.Sqrt(2/float64(m.nobs)), z975))
+
+	k := float64(m.exogDim + m.p + m.bigP + m.q + m.bigQ + 1) // +1 = sigma2
+	return &Summary{
+		Params: rows,
+		NObs:   m.nobs,
+		LogLik: m.logLik,
+		AIC:    -2*m.logLik + 2*k,
+		BIC:    -2*m.logLik + k*math.Log(float64(m.nobs)),
+		Sigma2: m.sigma2,
+	}, nil
+}
+
+func statRow(name string, coef, se, z975 float64) ParamStat {
+	z := coef / se
+	return ParamStat{
+		Name:    name,
+		Coef:    coef,
+		StdErr:  se,
+		ZScore:  z,
+		PValue:  2 * (1 - distuv.UnitNormal.CDF(math.Abs(z))),
+		CILower: coef - z975*se,
+		CIUpper: coef + z975*se,
+	}
+}
+
+// String renders the Summary as a fixed-width table (statsmodels-like).
+func (s *Summary) String() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "n=%d  logLik=%.4f  AIC=%.4f  BIC=%.4f  sigma2=%.6g\n",
+		s.NObs, s.LogLik, s.AIC, s.BIC, s.Sigma2)
+	fmt.Fprintf(&b, "%-10s %12s %12s %9s %9s %12s %12s\n",
+		"param", "coef", "std err", "z", "P>|z|", "[0.025", "0.975]")
+	for _, p := range s.Params {
+		fmt.Fprintf(&b, "%-10s %12.6g %12.6g %9.3f %9.3f %12.6g %12.6g\n",
+			p.Name, p.Coef, p.StdErr, p.ZScore, p.PValue, p.CILower, p.CIUpper)
+	}
+	return b.String()
 }
