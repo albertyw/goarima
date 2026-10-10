@@ -4,7 +4,7 @@ name: test
 
 steps:
   - name: Test Go
-    image: golang:1.25
+    image: golang:1.27
     commands:
       - make test
       - make race
